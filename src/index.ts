@@ -5,9 +5,12 @@
  * and exposes a REST API for retrieval.
  */
 
+import { sendEmail } from './send/resend';
+
 export interface Env {
   DB: D1Database;
   API_SECRET: string;
+  RESEND_API_KEY: string;
 }
 
 interface EmailMessage {
@@ -68,8 +71,13 @@ function jsonResponse(data: unknown, status = 200): Response {
   });
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
 async function handleFetch(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
+  const defaultFrom = 'hello@mistystep.io';
   
   // Authenticate all API requests
   const authHeader = request.headers.get('Authorization');
@@ -136,7 +144,7 @@ async function handleFetch(request: Request, env: Env): Promise<Response> {
   // PATCH /emails/:id - Update email (read status, star, folder)
   if (url.pathname.match(/^\/emails\/\d+$/) && request.method === 'PATCH') {
     const id = url.pathname.split('/')[2];
-    const body = await request.json() as Record<string, unknown>;
+    const body = await request.json();
 
     const updates: string[] = [];
     const params: (string | number)[] = [];
@@ -185,6 +193,85 @@ async function handleFetch(request: Request, env: Env): Promise<Response> {
     return jsonResponse({ success: true });
   }
 
+  // POST /send - Send email via Resend
+  if (url.pathname === '/send' && request.method === 'POST') {
+    let payload: unknown;
+
+    try {
+      payload = await request.json();
+    } catch {
+      return jsonResponse({ error: 'Invalid JSON body' }, 400);
+    }
+
+    if (!isRecord(payload)) {
+      return jsonResponse({ error: 'Invalid request body' }, 400);
+    }
+
+    const to = typeof payload.to === 'string' ? payload.to.trim() : '';
+    const subject = typeof payload.subject === 'string' ? payload.subject.trim() : '';
+    const html = typeof payload.html === 'string' ? payload.html : undefined;
+    const text = typeof payload.text === 'string' ? payload.text : undefined;
+    const from =
+      typeof payload.from === 'string' && payload.from.trim().length > 0
+        ? payload.from.trim()
+        : defaultFrom;
+
+    if (to.length === 0) {
+      return jsonResponse({ error: 'Missing "to"' }, 400);
+    }
+
+    if (subject.length === 0) {
+      return jsonResponse({ error: 'Missing "subject"' }, 400);
+    }
+
+    if (!html && !text) {
+      return jsonResponse({ error: 'Missing "html" or "text"' }, 400);
+    }
+
+    const sendResult = await sendEmail(env.RESEND_API_KEY, {
+      to,
+      subject,
+      from,
+      html,
+      text
+    });
+
+    if (sendResult.success && sendResult.messageId) {
+      await env.DB.prepare(`
+        INSERT INTO sent_emails (message_id, sender, recipient, subject, html, text, status, sent_at)
+        VALUES (?, ?, ?, ?, ?, ?, 'sent', datetime('now'))
+      `)
+        .bind(
+          sendResult.messageId,
+          from,
+          to,
+          subject,
+          html ?? null,
+          text ?? null
+        )
+        .run();
+
+      return jsonResponse({ success: true, messageId: sendResult.messageId });
+    }
+
+    await env.DB.prepare(`
+      INSERT INTO sent_emails (message_id, sender, recipient, subject, html, text, status, error, sent_at)
+      VALUES (?, ?, ?, ?, ?, ?, 'error', ?, datetime('now'))
+    `)
+      .bind(
+        sendResult.messageId ?? null,
+        from,
+        to,
+        subject,
+        html ?? null,
+        text ?? null,
+        sendResult.error ?? 'Unknown error'
+      )
+      .run();
+
+    return jsonResponse({ error: sendResult.error || 'Failed to send email' }, 502);
+  }
+
   // GET /stats - Mailbox statistics
   if (url.pathname === '/stats' && request.method === 'GET') {
     const stats = await env.DB.prepare(`
@@ -211,11 +298,11 @@ async function handleFetch(request: Request, env: Env): Promise<Response> {
 // ============== Export ==============
 
 export default {
-  async email(message: EmailMessage, env: Env, ctx: ExecutionContext): Promise<void> {
+  async email(message: EmailMessage, env: Env, _ctx: ExecutionContext): Promise<void> {
     await handleEmail(message, env);
   },
 
-  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+  async fetch(request: Request, env: Env, _ctx: ExecutionContext): Promise<Response> {
     return handleFetch(request, env);
   }
 };

@@ -7,14 +7,39 @@
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "db:init": "wrangler d1 execute mailbox --file=schema.sql",
-    "db:init:local": "wrangler d1 execute mailbox --local --file=schema.sql"
+    "db:init:local": "wrangler d1 execute mailbox --local --file=schema.sql",
+    "lint": "eslint .",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "prepare": "husky install"
   },
   "keywords": ["cloudflare", "email", "workers", "d1", "self-hosted"],
   "author": "Misty Step",
   "license": "MIT",
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20240117.0",
+    "@cloudflare/vitest-pool-workers": "^0.5.19",
+    "@typescript-eslint/eslint-plugin": "^7.18.0",
+    "@typescript-eslint/parser": "^7.18.0",
+    "@vitest/coverage-v8": "^2.1.8",
+    "eslint": "^8.57.0",
+    "eslint-config-prettier": "^9.1.0",
+    "husky": "^9.0.11",
+    "lint-staged": "^15.2.11",
+    "prettier": "^3.2.5",
     "typescript": "^5.3.3",
+    "vitest": "^2.1.8",
     "wrangler": "^3.24.0"
+  },
+  "lint-staged": {
+    "**/*.{ts,tsx,js,jsx}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "**/*.{json,md,yml,yaml,css,scss}": [
+      "prettier --write"
+    ]
   }
 }

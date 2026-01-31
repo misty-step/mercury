@@ -1,6 +1,7 @@
 name = "cloudflare-mailbox"
 main = "src/index.ts"
 compatibility_date = "2024-01-01"
+compatibility_flags = ["nodejs_compat"]
 
 # D1 Database binding - create yours with: wrangler d1 create mailbox
 [[d1_databases]]
@@ -12,5 +13,4 @@ database_id = "YOUR_DATABASE_ID"
 # [vars]
 # API_SECRET = "set-via-wrangler-secret"
 
-[triggers]
-# Email routing trigger - configure in Cloudflare dashboard
+# Email routing configured in Cloudflare dashboard
