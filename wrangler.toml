@@ -1,0 +1,16 @@
+name = "cloudflare-mailbox"
+main = "src/index.ts"
+compatibility_date = "2024-01-01"
+
+# D1 Database binding - create yours with: wrangler d1 create mailbox
+[[d1_databases]]
+binding = "DB"
+database_name = "mailbox"
+database_id = "YOUR_DATABASE_ID"
+
+# Secret for API authentication - set with: wrangler secret put API_SECRET
+# [vars]
+# API_SECRET = "set-via-wrangler-secret"
+
+[triggers]
+# Email routing trigger - configure in Cloudflare dashboard
