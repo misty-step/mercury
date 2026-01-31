@@ -144,7 +144,7 @@ async function handleFetch(request: Request, env: Env): Promise<Response> {
   // PATCH /emails/:id - Update email (read status, star, folder)
   if (url.pathname.match(/^\/emails\/\d+$/) && request.method === 'PATCH') {
     const id = url.pathname.split('/')[2];
-    const body = await request.json();
+    const body = (await request.json()) as Record<string, unknown>;
 
     const updates: string[] = [];
     const params: (string | number)[] = [];
@@ -159,7 +159,7 @@ async function handleFetch(request: Request, env: Env): Promise<Response> {
     }
     if (typeof body.folder === 'string') {
       updates.push('folder = ?');
-      params.push(body.folder);
+      params.push(body.folder as string);
     }
     if (body.mark_synced === true) {
       updates.push("synced_at = datetime('now')");
