@@ -3,9 +3,14 @@ main = "src/index.ts"
 compatibility_date = "2024-01-01"
 compatibility_flags = ["nodejs_compat"]
 
-routes = [
-  { pattern = "mail-api.mistystep.io/*", zone_name = "mistystep.io" }
-]
+# Misty Step account - DO NOT deploy to other accounts
+account_id = "b069014f6a46558ea9146fb6c4ff8f6c"
+
+# Enable workers.dev subdomain for testing
+workers_dev = true
+
+# Custom Domain configured via API - no routes needed
+# The worker is attached to mail-api.mistystep.io via Workers Custom Domains
 
 # D1 Database binding - create yours with: wrangler d1 create mailbox
 [[d1_databases]]
