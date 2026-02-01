@@ -1,0 +1,307 @@
+#!/usr/bin/env bash
+#
+# Mercury Mail CLI
+# A command-line client for Mercury Mail servers
+#
+# Usage: mercury <command> [options]
+#
+# Configuration:
+#   MERCURY_API_URL     - Server URL (default: https://mail-api.mistystep.io)
+#   MERCURY_API_SECRET  - API secret (or use 1Password integration)
+#
+
+set -euo pipefail
+
+VERSION="1.0.0"
+API_URL="${MERCURY_API_URL:-https://mail-api.mistystep.io}"
+
+# Colors (disabled if not a terminal)
+if [ -t 1 ]; then
+  RED='\033[0;31m'
+  GREEN='\033[0;32m'
+  BLUE='\033[0;34m'
+  YELLOW='\033[1;33m'
+  BOLD='\033[1m'
+  DIM='\033[2m'
+  NC='\033[0m'
+else
+  RED='' GREEN='' BLUE='' YELLOW='' BOLD='' DIM='' NC=''
+fi
+
+# Get API secret from environment or 1Password
+get_secret() {
+  if [ -n "${MERCURY_API_SECRET:-}" ]; then
+    echo "$MERCURY_API_SECRET"
+  elif command -v op &>/dev/null; then
+    op read "op://Personal/Mercury Mail API/API_SECRET" 2>/dev/null || {
+      echo -e "${RED}Error: MERCURY_API_SECRET not set and 1Password read failed${NC}" >&2
+      echo "Set MERCURY_API_SECRET or sign in to 1Password: eval \$(op signin)" >&2
+      exit 1
+    }
+  else
+    echo -e "${RED}Error: MERCURY_API_SECRET not set and 1Password CLI not found${NC}" >&2
+    echo "Either set MERCURY_API_SECRET or install 1Password CLI" >&2
+    exit 1
+  fi
+}
+
+# API request helper
+api() {
+  local method="$1"
+  local endpoint="$2"
+  local data="${3:-}"
+  local secret
+  secret=$(get_secret)
+  
+  if [ -n "$data" ]; then
+    curl -s -X "$method" "$API_URL$endpoint" \
+      -H "Authorization: Bearer $secret" \
+      -H "Content-Type: application/json" \
+      -d "$data"
+  else
+    curl -s -X "$method" "$API_URL$endpoint" \
+      -H "Authorization: Bearer $secret"
+  fi
+}
+
+# Commands
+cmd_inbox() {
+  local limit="${1:-20}"
+  local offset="${2:-0}"
+  
+  echo -e "${BLUE}${BOLD}📬 Mercury Inbox${NC}"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  
+  api GET "/emails?limit=$limit&offset=$offset" | jq -r '
+    if .total == 0 then
+      "  (empty)"
+    else
+      .emails[] | 
+      "\(if .is_read == 0 then "●" else " " end) [\(.id | tostring | (" " * (3 - length)) + .)] \(.sender | split("@")[0][0:25] | . + (" " * (25 - length))) \(.subject[0:45])"
+    end
+  '
+  
+  echo ""
+  api GET "/emails?limit=$limit&offset=$offset" | jq -r '"  Total: \(.total) emails"'
+}
+
+cmd_read() {
+  local id="$1"
+  
+  if [ -z "$id" ]; then
+    echo -e "${RED}Usage: mercury read <id>${NC}" >&2
+    exit 1
+  fi
+  
+  local email
+  email=$(api GET "/emails/$id")
+  
+  echo -e "${BLUE}${BOLD}📧 Email #$id${NC}"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "$email" | jq -r '
+    "From:    \(.sender)",
+    "To:      \(.recipient)",
+    "Subject: \(.subject)",
+    "Date:    \(.received_at)",
+    "",
+    "─────────────────────────────────────────────────────────────────────────────",
+    "",
+    (if .body_text and .body_text != "" then .body_text 
+     elif .body_html and .body_html != "" then .body_html 
+     else "(no body)" end)
+  '
+}
+
+cmd_send() {
+  local from="${1:-}"
+  local to="${2:-}"
+  local subject="${3:-}"
+  
+  # Interactive mode if not all args provided
+  if [ -z "$to" ]; then
+    echo -e "${YELLOW}${BOLD}✉️  Compose New Email${NC}"
+    echo ""
+    read -rp "From [kaylee@mistystep.io]: " from
+    from="${from:-kaylee@mistystep.io}"
+    read -rp "To: " to
+    read -rp "Subject: " subject
+    echo "Body (Ctrl+D when done):"
+    body=$(cat)
+  else
+    body=$(cat)
+  fi
+  
+  if [ -z "$to" ]; then
+    echo -e "${RED}Error: Recipient required${NC}" >&2
+    exit 1
+  fi
+  
+  echo -e "\n${DIM}Sending...${NC}"
+  
+  local payload
+  payload=$(jq -n \
+    --arg from "$from" \
+    --arg to "$to" \
+    --arg subject "$subject" \
+    --arg text "$body" \
+    '{from: $from, to: $to, subject: $subject, text: $text}')
+  
+  local result
+  result=$(api POST "/send" "$payload")
+  
+  if echo "$result" | jq -e '.success' &>/dev/null; then
+    echo -e "${GREEN}✅ Sent!${NC} Message ID: $(echo "$result" | jq -r '.messageId')"
+  else
+    echo -e "${RED}❌ Failed:${NC} $(echo "$result" | jq -r '.error // "Unknown error"')"
+    exit 1
+  fi
+}
+
+cmd_reply() {
+  local id="$1"
+  
+  if [ -z "$id" ]; then
+    echo -e "${RED}Usage: mercury reply <id>${NC}" >&2
+    exit 1
+  fi
+  
+  local original
+  original=$(api GET "/emails/$id")
+  
+  local orig_from orig_subject orig_id
+  orig_from=$(echo "$original" | jq -r '.sender')
+  orig_subject=$(echo "$original" | jq -r '.subject')
+  orig_id=$(echo "$original" | jq -r '.message_id')
+  
+  echo -e "${YELLOW}${BOLD}↩️  Reply${NC}"
+  echo -e "${DIM}To: $orig_from${NC}"
+  echo -e "${DIM}Subject: Re: $orig_subject${NC}"
+  echo ""
+  read -rp "From [kaylee@mistystep.io]: " from
+  from="${from:-kaylee@mistystep.io}"
+  echo "Body (Ctrl+D when done):"
+  body=$(cat)
+  
+  local subject="Re: $orig_subject"
+  
+  echo -e "\n${DIM}Sending reply...${NC}"
+  
+  local payload
+  payload=$(jq -n \
+    --arg from "$from" \
+    --arg to "$orig_from" \
+    --arg subject "$subject" \
+    --arg text "$body" \
+    --arg replyTo "$orig_id" \
+    '{from: $from, to: $to, subject: $subject, text: $text, headers: {"In-Reply-To": $replyTo, "References": $replyTo}}')
+  
+  local result
+  result=$(api POST "/send" "$payload")
+  
+  if echo "$result" | jq -e '.success' &>/dev/null; then
+    echo -e "${GREEN}✅ Reply sent!${NC}"
+  else
+    echo -e "${RED}❌ Failed:${NC} $(echo "$result" | jq -r '.error // "Unknown error"')"
+    exit 1
+  fi
+}
+
+cmd_delete() {
+  local id="$1"
+  
+  if [ -z "$id" ]; then
+    echo -e "${RED}Usage: mercury delete <id>${NC}" >&2
+    exit 1
+  fi
+  
+  read -rp "Delete email #$id? [y/N] " confirm
+  if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+    echo "Cancelled."
+    exit 0
+  fi
+  
+  local result
+  result=$(api DELETE "/emails/$id")
+  
+  if echo "$result" | jq -e '.success' &>/dev/null; then
+    echo -e "${GREEN}🗑️  Deleted email #$id${NC}"
+  else
+    echo -e "${RED}❌ Failed${NC}"
+    exit 1
+  fi
+}
+
+cmd_stats() {
+  echo -e "${BLUE}${BOLD}📊 Mailbox Statistics${NC}"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  api GET "/stats" | jq '.'
+}
+
+cmd_health() {
+  echo -e "${DIM}Checking $API_URL...${NC}"
+  local result
+  result=$(curl -s "$API_URL/health")
+  
+  if echo "$result" | jq -e '.status == "ok"' &>/dev/null; then
+    echo -e "${GREEN}✅ Server is healthy${NC}"
+    echo "$result" | jq '.'
+  else
+    echo -e "${RED}❌ Server unhealthy or unreachable${NC}"
+    echo "$result"
+    exit 1
+  fi
+}
+
+cmd_help() {
+  cat <<EOF
+${BOLD}Mercury Mail CLI${NC} v$VERSION
+
+${BOLD}USAGE${NC}
+    mercury <command> [options]
+
+${BOLD}COMMANDS${NC}
+    inbox [limit] [offset]    List emails in inbox
+    read <id>                 Read an email
+    send [from] [to] [subj]   Send a new email (interactive if no args)
+    reply <id>                Reply to an email
+    delete <id>               Delete an email
+    stats                     Show mailbox statistics
+    health                    Check server health
+    help                      Show this help
+
+${BOLD}ENVIRONMENT${NC}
+    MERCURY_API_URL       Server URL (default: https://mail-api.mistystep.io)
+    MERCURY_API_SECRET    API secret for authentication
+
+${BOLD}1PASSWORD INTEGRATION${NC}
+    If MERCURY_API_SECRET is not set, the CLI will attempt to read it from
+    1Password at: op://Personal/Mercury Mail API/API_SECRET
+
+${BOLD}EXAMPLES${NC}
+    mercury inbox                   # List latest 20 emails
+    mercury inbox 50                # List latest 50 emails
+    mercury read 1                  # Read email #1
+    mercury send                    # Interactive compose
+    echo "Hello" | mercury send me@example.com them@example.com "Hi"
+    mercury reply 1                 # Reply to email #1
+
+EOF
+}
+
+# Main
+case "${1:-help}" in
+  inbox|list|ls)     shift; cmd_inbox "$@" ;;
+  read|show|view)    shift; cmd_read "$@" ;;
+  send|compose|new)  shift; cmd_send "$@" ;;
+  reply)             shift; cmd_reply "$@" ;;
+  delete|rm|del)     shift; cmd_delete "$@" ;;
+  stats)             shift; cmd_stats "$@" ;;
+  health|ping)       shift; cmd_health "$@" ;;
+  help|-h|--help)    cmd_help ;;
+  version|-v|--version) echo "mercury v$VERSION" ;;
+  *)
+    echo -e "${RED}Unknown command: $1${NC}" >&2
+    echo "Run 'mercury help' for usage" >&2
+    exit 1
+    ;;
+esac
