@@ -1,6 +1,6 @@
 /**
  * Cloudflare Mailbox - Email Worker
- * 
+ *
  * Receives email via Cloudflare Email Routing, stores in D1,
  * and exposes a REST API for retrieval.
  */
@@ -28,24 +28,21 @@ async function handleEmail(message: EmailMessage, env: Env): Promise<void> {
     const rawEmail = await new Response(message.raw).text();
     const messageId = message.headers.get('message-id') || crypto.randomUUID();
     const subject = message.headers.get('subject') || '(no subject)';
-    
+
     // Extract useful headers as JSON
     const headersObj: Record<string, string> = {};
     for (const [key, value] of message.headers.entries()) {
       headersObj[key.toLowerCase()] = value;
     }
 
-    await env.DB.prepare(`
+    await env.DB.prepare(
+      `
       INSERT INTO emails (message_id, sender, recipient, subject, raw_email, headers_json, received_at)
       VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
-    `).bind(
-      messageId,
-      message.from,
-      message.to,
-      subject,
-      rawEmail,
-      JSON.stringify(headersObj)
-    ).run();
+    `,
+    )
+      .bind(messageId, message.from, message.to, subject, rawEmail, JSON.stringify(headersObj))
+      .run();
 
     console.log(`✅ Stored email from ${message.from}: ${subject}`);
   } catch (error) {
@@ -67,7 +64,7 @@ function notFound(): Response {
 function jsonResponse(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { 'Content-Type': 'application/json' }
+    headers: { 'Content-Type': 'application/json' },
   });
 }
 
@@ -78,8 +75,18 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 async function handleFetch(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
   const defaultFrom = 'hello@mistystep.io';
-  
-  // Authenticate all API requests
+
+  // Health check (no auth required)
+  if (url.pathname === '/health') {
+    return jsonResponse({ status: 'ok', timestamp: new Date().toISOString(), version: 'v2' });
+  }
+
+  // Test endpoint (no auth required)
+  if (url.pathname === '/test') {
+    return new Response('Mercury Mail is working!', { status: 200 });
+  }
+
+  // Authenticate all other API requests
   const authHeader = request.headers.get('Authorization');
   if (authHeader !== `Bearer ${env.API_SECRET}`) {
     return unauthorized();
@@ -115,27 +122,31 @@ async function handleFetch(request: Request, env: Env): Promise<Response> {
     query += ' ORDER BY received_at DESC LIMIT ? OFFSET ?';
     params.push(limit, offset);
 
-    const result = await env.DB.prepare(query).bind(...params).all();
-    
+    const result = await env.DB.prepare(query)
+      .bind(...params)
+      .all();
+
     // Get total count
     const countResult = await env.DB.prepare(
-      'SELECT COUNT(*) as count FROM emails WHERE deleted_at IS NULL AND folder = ?'
-    ).bind(folder).first<{ count: number }>();
+      'SELECT COUNT(*) as count FROM emails WHERE deleted_at IS NULL AND folder = ?',
+    )
+      .bind(folder)
+      .first<{ count: number }>();
 
     return jsonResponse({
       emails: result.results,
       total: countResult?.count || 0,
       limit,
-      offset
+      offset,
     });
   }
 
   // GET /emails/:id - Get single email with full content
   if (url.pathname.match(/^\/emails\/\d+$/) && request.method === 'GET') {
     const id = url.pathname.split('/')[2];
-    const email = await env.DB.prepare(
-      'SELECT * FROM emails WHERE id = ? AND deleted_at IS NULL'
-    ).bind(id).first();
+    const email = await env.DB.prepare('SELECT * FROM emails WHERE id = ? AND deleted_at IS NULL')
+      .bind(id)
+      .first();
 
     if (!email) return notFound();
     return jsonResponse({ email });
@@ -170,9 +181,9 @@ async function handleFetch(request: Request, env: Env): Promise<Response> {
     }
 
     params.push(id);
-    await env.DB.prepare(
-      `UPDATE emails SET ${updates.join(', ')} WHERE id = ?`
-    ).bind(...params).run();
+    await env.DB.prepare(`UPDATE emails SET ${updates.join(', ')} WHERE id = ?`)
+      .bind(...params)
+      .run();
 
     return jsonResponse({ success: true });
   }
@@ -186,8 +197,10 @@ async function handleFetch(request: Request, env: Env): Promise<Response> {
       await env.DB.prepare('DELETE FROM emails WHERE id = ?').bind(id).run();
     } else {
       await env.DB.prepare(
-        "UPDATE emails SET deleted_at = datetime('now'), folder = 'trash' WHERE id = ?"
-      ).bind(id).run();
+        "UPDATE emails SET deleted_at = datetime('now'), folder = 'trash' WHERE id = ?",
+      )
+        .bind(id)
+        .run();
     }
 
     return jsonResponse({ success: true });
@@ -233,31 +246,28 @@ async function handleFetch(request: Request, env: Env): Promise<Response> {
       subject,
       from,
       html,
-      text
+      text,
     });
 
     if (sendResult.success && sendResult.messageId) {
-      await env.DB.prepare(`
+      await env.DB.prepare(
+        `
         INSERT INTO sent_emails (message_id, sender, recipient, subject, html, text, status, sent_at)
         VALUES (?, ?, ?, ?, ?, ?, 'sent', datetime('now'))
-      `)
-        .bind(
-          sendResult.messageId,
-          from,
-          to,
-          subject,
-          html ?? null,
-          text ?? null
-        )
+      `,
+      )
+        .bind(sendResult.messageId, from, to, subject, html ?? null, text ?? null)
         .run();
 
       return jsonResponse({ success: true, messageId: sendResult.messageId });
     }
 
-    await env.DB.prepare(`
+    await env.DB.prepare(
+      `
       INSERT INTO sent_emails (message_id, sender, recipient, subject, html, text, status, error, sent_at)
       VALUES (?, ?, ?, ?, ?, ?, 'error', ?, datetime('now'))
-    `)
+    `,
+    )
       .bind(
         sendResult.messageId ?? null,
         from,
@@ -265,7 +275,7 @@ async function handleFetch(request: Request, env: Env): Promise<Response> {
         subject,
         html ?? null,
         text ?? null,
-        sendResult.error ?? 'Unknown error'
+        sendResult.error ?? 'Unknown error',
       )
       .run();
 
@@ -274,7 +284,8 @@ async function handleFetch(request: Request, env: Env): Promise<Response> {
 
   // GET /stats - Mailbox statistics
   if (url.pathname === '/stats' && request.method === 'GET') {
-    const stats = await env.DB.prepare(`
+    const stats = await env.DB.prepare(
+      `
       SELECT 
         COUNT(*) as total,
         SUM(CASE WHEN is_read = 0 THEN 1 ELSE 0 END) as unread,
@@ -282,14 +293,10 @@ async function handleFetch(request: Request, env: Env): Promise<Response> {
         SUM(CASE WHEN folder = 'inbox' THEN 1 ELSE 0 END) as inbox,
         SUM(CASE WHEN folder = 'trash' THEN 1 ELSE 0 END) as trash
       FROM emails WHERE deleted_at IS NULL
-    `).first();
+    `,
+    ).first();
 
     return jsonResponse({ stats });
-  }
-
-  // Health check (no auth required)
-  if (url.pathname === '/health') {
-    return jsonResponse({ status: 'ok', timestamp: new Date().toISOString() });
   }
 
   return notFound();
@@ -304,5 +311,5 @@ export default {
 
   async fetch(request: Request, env: Env, _ctx: ExecutionContext): Promise<Response> {
     return handleFetch(request, env);
-  }
+  },
 };
