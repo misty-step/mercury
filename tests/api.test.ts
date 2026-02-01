@@ -6,7 +6,7 @@ import { createMockD1Database } from './helpers/mockD1';
 function createExecutionContext(): ExecutionContext {
   return {
     waitUntil: () => {},
-    passThroughOnException: () => {}
+    passThroughOnException: () => {},
   };
 }
 
@@ -16,18 +16,18 @@ function buildRequest(path: string, init?: RequestInit): Request {
 
 describe('api', () => {
   let db: MockD1Database;
-  let env: { DB: MockD1Database; API_SECRET: string };
+  let env: { DB: MockD1Database; API_SECRET: string; RESEND_API_KEY: string };
 
   beforeEach(() => {
     db = createMockD1Database({ now: () => '2026-01-31T13:00:00.000Z' });
-    env = { DB: db, API_SECRET: 'secret' };
+    env = { DB: db, API_SECRET: 'secret', RESEND_API_KEY: 'test-key' };
   });
 
   it('should reject unauthorized requests', async () => {
     const response = await worker.fetch(
       buildRequest('/emails'),
       env as never,
-      createExecutionContext()
+      createExecutionContext(),
     );
 
     expect(response.status).toBe(401);
@@ -39,14 +39,14 @@ describe('api', () => {
 
     const response = await worker.fetch(
       buildRequest('/emails?limit=1&offset=0', {
-        headers: { Authorization: 'Bearer secret' }
+        headers: { Authorization: 'Bearer secret' },
       }),
       env as never,
-      createExecutionContext()
+      createExecutionContext(),
     );
 
     expect(response.status).toBe(200);
-    const body = (await response.json());
+    const body = await response.json();
 
     expect(body.total).toBe(2);
     expect(body.limit).toBe(1);
@@ -60,14 +60,14 @@ describe('api', () => {
 
     const response = await worker.fetch(
       buildRequest(`/emails/${record.id}`, {
-        headers: { Authorization: 'Bearer secret' }
+        headers: { Authorization: 'Bearer secret' },
       }),
       env as never,
-      createExecutionContext()
+      createExecutionContext(),
     );
 
     expect(response.status).toBe(200);
-    const body = (await response.json());
+    const body = await response.json();
     expect(body.email.id).toBe(record.id);
     expect(body.email.subject).toBe('Lookup');
   });
@@ -80,12 +80,17 @@ describe('api', () => {
         method: 'PATCH',
         headers: {
           Authorization: 'Bearer secret',
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ is_read: true, is_starred: true, folder: 'archive', mark_synced: true })
+        body: JSON.stringify({
+          is_read: true,
+          is_starred: true,
+          folder: 'archive',
+          mark_synced: true,
+        }),
       }),
       env as never,
-      createExecutionContext()
+      createExecutionContext(),
     );
 
     expect(response.status).toBe(200);
@@ -96,16 +101,84 @@ describe('api', () => {
     expect(updated?.synced_at).toBe('2026-01-31T13:00:00.000Z');
   });
 
+  it('should reject invalid folder updates', async () => {
+    const record = db.insertEmail({ folder: 'inbox' });
+
+    const response = await worker.fetch(
+      buildRequest(`/emails/${record.id}`, {
+        method: 'PATCH',
+        headers: {
+          Authorization: 'Bearer secret',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ folder: 'spam' }),
+      }),
+      env as never,
+      createExecutionContext(),
+    );
+
+    expect(response.status).toBe(400);
+    const body = await response.json();
+    expect(body.error).toBe('Invalid folder. Valid: inbox, trash, archive, sent, drafts');
+  });
+
+  it('should reject invalid email formats on send', async () => {
+    const response = await worker.fetch(
+      buildRequest('/send', {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer secret',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          to: 'not-an-email',
+          subject: 'Hi',
+          text: 'Hello',
+        }),
+      }),
+      env as never,
+      createExecutionContext(),
+    );
+
+    expect(response.status).toBe(400);
+    const body = await response.json();
+    expect(body.error).toBe('Invalid email address format');
+  });
+
+  it('should return 404 for debug endpoint', async () => {
+    const response = await worker.fetch(
+      buildRequest('/debug', {
+        headers: { Authorization: 'Bearer secret' },
+      }),
+      env as never,
+      createExecutionContext(),
+    );
+
+    expect(response.status).toBe(404);
+  });
+
+  it('should return 404 for test endpoint', async () => {
+    const response = await worker.fetch(
+      buildRequest('/test', {
+        headers: { Authorization: 'Bearer secret' },
+      }),
+      env as never,
+      createExecutionContext(),
+    );
+
+    expect(response.status).toBe(404);
+  });
+
   it('should soft delete and permanently delete emails', async () => {
     const record = db.insertEmail({ folder: 'inbox' });
 
     const softResponse = await worker.fetch(
       buildRequest(`/emails/${record.id}`, {
         method: 'DELETE',
-        headers: { Authorization: 'Bearer secret' }
+        headers: { Authorization: 'Bearer secret' },
       }),
       env as never,
-      createExecutionContext()
+      createExecutionContext(),
     );
 
     expect(softResponse.status).toBe(200);
@@ -116,10 +189,10 @@ describe('api', () => {
     const permanentResponse = await worker.fetch(
       buildRequest(`/emails/${record.id}?permanent=true`, {
         method: 'DELETE',
-        headers: { Authorization: 'Bearer secret' }
+        headers: { Authorization: 'Bearer secret' },
       }),
       env as never,
-      createExecutionContext()
+      createExecutionContext(),
     );
 
     expect(permanentResponse.status).toBe(200);
@@ -129,18 +202,23 @@ describe('api', () => {
   it('should return mailbox stats', async () => {
     db.insertEmail({ is_read: 0, is_starred: 1, folder: 'inbox' });
     db.insertEmail({ is_read: 1, is_starred: 0, folder: 'trash' });
-    db.insertEmail({ is_read: 0, is_starred: 0, folder: 'inbox', deleted_at: '2026-01-31T12:00:00.000Z' });
+    db.insertEmail({
+      is_read: 0,
+      is_starred: 0,
+      folder: 'inbox',
+      deleted_at: '2026-01-31T12:00:00.000Z',
+    });
 
     const response = await worker.fetch(
       buildRequest('/stats', {
-        headers: { Authorization: 'Bearer secret' }
+        headers: { Authorization: 'Bearer secret' },
       }),
       env as never,
-      createExecutionContext()
+      createExecutionContext(),
     );
 
     expect(response.status).toBe(200);
-    const body = (await response.json());
+    const body = await response.json();
 
     expect(body.stats.total).toBe(2);
     expect(body.stats.unread).toBe(1);

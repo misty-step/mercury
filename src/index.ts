@@ -76,19 +76,9 @@ async function handleFetch(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
   const defaultFrom = 'hello@mistystep.io';
 
-  // Debug endpoint - always first
-  if (url.pathname === '/debug') {
-    return new Response(`Debug: pathname=${url.pathname}, deployId=v3-test`, { status: 200 });
-  }
-
   // Health check (no auth required)
   if (url.pathname === '/health') {
     return jsonResponse({ status: 'ok', timestamp: new Date().toISOString(), version: 'v3' });
-  }
-
-  // Test endpoint (no auth required)
-  if (url.pathname === '/test') {
-    return new Response('Mercury Mail is working! (v3)', { status: 200 });
   }
 
   // Authenticate all other API requests
@@ -173,9 +163,16 @@ async function handleFetch(request: Request, env: Env): Promise<Response> {
       updates.push('is_starred = ?');
       params.push(body.is_starred ? 1 : 0);
     }
+    const VALID_FOLDERS = new Set(['inbox', 'trash', 'archive', 'sent', 'drafts']);
     if (typeof body.folder === 'string') {
+      if (!VALID_FOLDERS.has(body.folder)) {
+        return jsonResponse(
+          { error: 'Invalid folder. Valid: inbox, trash, archive, sent, drafts' },
+          400,
+        );
+      }
       updates.push('folder = ?');
-      params.push(body.folder as string);
+      params.push(body.folder);
     }
     if (body.mark_synced === true) {
       updates.push("synced_at = datetime('now')");
@@ -236,6 +233,12 @@ async function handleFetch(request: Request, env: Env): Promise<Response> {
 
     if (to.length === 0) {
       return jsonResponse({ error: 'Missing "to"' }, 400);
+    }
+
+    // Email format validation
+    const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!EMAIL_REGEX.test(to)) {
+      return jsonResponse({ error: 'Invalid email address format' }, 400);
     }
 
     if (subject.length === 0) {
