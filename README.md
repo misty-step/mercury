@@ -57,8 +57,11 @@ npm run deploy
 ### CLI Setup
 
 ```bash
-# Install CLI
-sudo cp cli/mercury /usr/local/bin/
+# Build CLI
+cd cli
+go build -o mercury
+sudo cp mercury /usr/local/bin/
+cd ..
 
 # Configure (choose one):
 # Option 1: Environment variable
@@ -103,15 +106,15 @@ Access:
 
 All endpoints require `Authorization: Bearer <API_SECRET>` header.
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/health` | Health check (no auth) |
-| `GET` | `/emails` | List emails |
-| `GET` | `/emails/:id` | Get email |
-| `PATCH` | `/emails/:id` | Update email (read, star, folder) |
-| `DELETE` | `/emails/:id` | Delete email |
-| `POST` | `/send` | Send email |
-| `GET` | `/stats` | Mailbox statistics |
+| Method   | Endpoint      | Description                       |
+| -------- | ------------- | --------------------------------- |
+| `GET`    | `/health`     | Health check (no auth)            |
+| `GET`    | `/emails`     | List emails                       |
+| `GET`    | `/emails/:id` | Get email                         |
+| `PATCH`  | `/emails/:id` | Update email (read, star, folder) |
+| `DELETE` | `/emails/:id` | Delete email                      |
+| `POST`   | `/send`       | Send email                        |
+| `GET`    | `/stats`      | Mailbox statistics                |
 
 ### Query Parameters (GET /emails)
 
@@ -141,14 +144,14 @@ All endpoints require `Authorization: Bearer <API_SECRET>` header.
 
 ## Cost
 
-| Component | Free Tier | Cost |
-|-----------|-----------|------|
-| Email Routing | Unlimited | $0 |
-| Workers | 100k req/day | $0 |
-| D1 Storage | 500 MB | $0 |
-| D1 Operations | 5M reads/day | $0 |
-| Resend | 100 emails/day | $0 |
-| **Total** | | **$0** |
+| Component     | Free Tier      | Cost   |
+| ------------- | -------------- | ------ |
+| Email Routing | Unlimited      | $0     |
+| Workers       | 100k req/day   | $0     |
+| D1 Storage    | 500 MB         | $0     |
+| D1 Operations | 5M reads/day   | $0     |
+| Resend        | 100 emails/day | $0     |
+| **Total**     |                | **$0** |
 
 ## Security
 

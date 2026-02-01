@@ -1,26 +1,21 @@
 # Mercury CLI
 
-A command-line client for Mercury Mail servers.
+Go-based CLI for Mercury Mail servers.
 
 ## Installation
-
-### Quick Install
-
-```bash
-# Copy to your PATH
-sudo cp cli/mercury /usr/local/bin/
-# or
-cp cli/mercury ~/.local/bin/
-```
 
 ### From Source
 
 ```bash
 git clone https://github.com/misty-step/mercury.git
-cd mercury
-chmod +x cli/mercury
-./cli/mercury help
+cd mercury/cli
+go build -o mercury
+./mercury --help
 ```
+
+### Legacy Bash CLI
+
+The previous Bash script lives at `cli/mercury-legacy`.
 
 ## Configuration
 
@@ -29,11 +24,13 @@ chmod +x cli/mercury
 The CLI needs an API secret to authenticate. You have two options:
 
 **Option 1: Environment Variable**
+
 ```bash
 export MERCURY_API_SECRET="your-secret-here"
 ```
 
 **Option 2: 1Password Integration**
+
 ```bash
 # The CLI automatically reads from 1Password if available
 # Store your secret at: op://Personal/Mercury Mail API/API_SECRET
@@ -76,13 +73,14 @@ mercury health
 
 # Mailbox statistics
 mercury stats
+
+# Custom server URL
+mercury --api-url https://your-mercury-server.com health
 ```
 
 ## Requirements
 
-- `bash` (4.0+)
-- `curl`
-- `jq`
+- Go 1.22+
 - `op` (optional, for 1Password integration)
 
 ## Examples

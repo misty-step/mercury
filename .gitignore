@@ -4,3 +4,5 @@ dist/
 .dev.vars
 *.log
 .DS_Store
+# Go CLI binary (source is tracked, binary is built)
+cli/mercury
