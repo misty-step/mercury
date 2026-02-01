@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -16,6 +17,7 @@ import (
 )
 
 const defaultBaseURL = "https://mail-api.mistystep.io"
+const maxErrorBodySize = 1 << 20 // 1MB
 
 type Client struct {
 	BaseURL string
@@ -48,6 +50,12 @@ func newClient(baseURL, secret string) *Client {
 	}
 	baseURL = strings.TrimRight(baseURL, "/")
 
+	if secret != "" && !strings.HasPrefix(baseURL, "https://") {
+		if !strings.Contains(baseURL, "localhost") && !strings.Contains(baseURL, "127.0.0.1") {
+			fmt.Fprintf(os.Stderr, "Warning: API secret will be sent over insecure connection to %s\n", baseURL)
+		}
+	}
+
 	return &Client{
 		BaseURL: baseURL,
 		Secret:  secret,
@@ -58,6 +66,10 @@ func newClient(baseURL, secret string) *Client {
 }
 
 func (c *Client) Do(method, path string, body interface{}) (*http.Response, error) {
+	return c.DoContext(context.Background(), method, path, body)
+}
+
+func (c *Client) DoContext(ctx context.Context, method, path string, body interface{}) (*http.Response, error) {
 	if !strings.HasPrefix(path, "/") {
 		path = "/" + path
 	}
@@ -73,7 +85,7 @@ func (c *Client) Do(method, path string, body interface{}) (*http.Response, erro
 		reader = bytes.NewReader(payload)
 	}
 
-	req, err := http.NewRequest(method, fullURL, reader)
+	req, err := http.NewRequestWithContext(ctx, method, fullURL, reader)
 	if err != nil {
 		return nil, fmt.Errorf("build request: %w", err)
 	}
@@ -157,6 +169,24 @@ func (c *Client) DeleteEmail(id int, permanent bool) error {
 	return nil
 }
 
+// UpdateEmail updates an email's metadata (read status, star, folder).
+func (c *Client) UpdateEmail(id int, updates EmailUpdate) error {
+	path := fmt.Sprintf("/emails/%d", id)
+	resp, err := c.Do(http.MethodPatch, path, updates)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	_, _ = io.Copy(io.Discard, resp.Body)
+	return nil
+}
+
+// MarkAsRead marks an email as read.
+func (c *Client) MarkAsRead(id int) error {
+	read := true
+	return c.UpdateEmail(id, EmailUpdate{IsRead: &read})
+}
+
 func (c *Client) GetStats() (*Stats, error) {
 	var resp StatsResponse
 	if err := c.getJSON("/stats", &resp); err != nil {
@@ -180,18 +210,27 @@ func (c *Client) getJSON(path string, out interface{}) error {
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode == http.StatusNoContent || resp.ContentLength == 0 {
+		return nil
+	}
+
 	if out == nil {
+		_, _ = io.Copy(io.Discard, resp.Body)
 		return nil
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
+		if err == io.EOF {
+			return nil
+		}
 		return fmt.Errorf("decode response: %w", err)
 	}
 	return nil
 }
 
-func apiError(resp *http.Response) error {
-	body, _ := io.ReadAll(resp.Body)
+func apiError(resp *http.Response) *APIError {
+	limited := io.LimitReader(resp.Body, maxErrorBodySize)
+	body, _ := io.ReadAll(limited)
 	message := strings.TrimSpace(string(body))
 
 	if len(body) > 0 {
@@ -212,5 +251,5 @@ func apiError(resp *http.Response) error {
 		message = http.StatusText(resp.StatusCode)
 	}
 
-	return fmt.Errorf("server returned %d: %s", resp.StatusCode, message)
+	return &APIError{StatusCode: resp.StatusCode, Message: message}
 }
