@@ -3,11 +3,15 @@ main = "src/index.ts"
 compatibility_date = "2024-01-01"
 compatibility_flags = ["nodejs_compat"]
 
+routes = [
+  { pattern = "mail-api.mistystep.io/*", zone_name = "mistystep.io" }
+]
+
 # D1 Database binding - create yours with: wrangler d1 create mailbox
 [[d1_databases]]
 binding = "DB"
 database_name = "mailbox"
-database_id = "YOUR_DATABASE_ID"
+database_id = "f2f805b4-1dd7-4ec8-b75a-35147e5744e6"
 
 # Secret for API authentication - set with: wrangler secret put API_SECRET
 # [vars]

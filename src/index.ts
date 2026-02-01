@@ -76,14 +76,19 @@ async function handleFetch(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
   const defaultFrom = 'hello@mistystep.io';
 
+  // Debug endpoint - always first
+  if (url.pathname === '/debug') {
+    return new Response(`Debug: pathname=${url.pathname}, deployId=v3-test`, { status: 200 });
+  }
+
   // Health check (no auth required)
   if (url.pathname === '/health') {
-    return jsonResponse({ status: 'ok', timestamp: new Date().toISOString(), version: 'v2' });
+    return jsonResponse({ status: 'ok', timestamp: new Date().toISOString(), version: 'v3' });
   }
 
   // Test endpoint (no auth required)
   if (url.pathname === '/test') {
-    return new Response('Mercury Mail is working!', { status: 200 });
+    return new Response('Mercury Mail is working! (v3)', { status: 200 });
   }
 
   // Authenticate all other API requests
