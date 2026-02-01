@@ -37,14 +37,17 @@ var readCmd = &cobra.Command{
 		fmt.Println(strings.Repeat("-", 78))
 		fmt.Println("")
 
-		body := email.BodyText
-		if body == "" {
-			body = email.BodyHTML
-		}
+		body := email.Body()
 		if body == "" {
 			body = "(no body)"
 		}
 		fmt.Println(body)
+
+		// Mark as read (best effort - don't fail the read if this fails)
+		if !email.Read() {
+			_ = client.MarkAsRead(id)
+		}
+
 		return nil
 	},
 }

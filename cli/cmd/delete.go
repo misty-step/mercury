@@ -28,7 +28,11 @@ var deleteCmd = &cobra.Command{
 		}
 
 		if !deleteForce {
-			confirm, err := confirmPrompt(fmt.Sprintf("Delete email #%d? [y/N] ", id))
+			prompt := fmt.Sprintf("Delete email #%d? [y/N] ", id)
+			if deletePermanent {
+				prompt = fmt.Sprintf("PERMANENTLY delete email #%d? This cannot be undone. [y/N] ", id)
+			}
+			confirm, err := confirmPrompt(prompt)
 			if err != nil {
 				return err
 			}

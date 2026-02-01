@@ -2,12 +2,12 @@ package cmd
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"strings"
 
-	"github.com/fatih/color"
 	"github.com/misty-step/mercury/cli/internal/api"
 	"github.com/spf13/cobra"
 )
@@ -27,18 +27,35 @@ var sendCmd = &cobra.Command{
 		subject := ""
 		var body string
 
+		defaultFrom := getDefaultFrom()
 		if len(args) == 0 {
 			printHeader("Compose New Email")
-			line, err := promptLine(reader, fmt.Sprintf("From [%s]: ", defaultFrom), defaultFrom)
+			fromPrompt := "From: "
+			if defaultFrom != "" {
+				fromPrompt = fmt.Sprintf("From [%s]: ", defaultFrom)
+			}
+			line, err := promptLine(reader, fromPrompt, defaultFrom)
+			if errors.Is(err, ErrUserCancelled) {
+				fmt.Println("Cancelled.")
+				return nil
+			}
 			if err != nil {
 				return err
 			}
 			from = line
 			to, err = promptLine(reader, "To: ", "")
+			if errors.Is(err, ErrUserCancelled) {
+				fmt.Println("Cancelled.")
+				return nil
+			}
 			if err != nil {
 				return err
 			}
 			subject, err = promptLine(reader, "Subject: ", "")
+			if errors.Is(err, ErrUserCancelled) {
+				fmt.Println("Cancelled.")
+				return nil
+			}
 			if err != nil {
 				return err
 			}
@@ -49,9 +66,9 @@ var sendCmd = &cobra.Command{
 			}
 			body = string(bodyBytes)
 		} else {
-			from = args[0]
-			to = args[1]
-			subject = args[2]
+			from = strings.TrimSpace(args[0])
+			to = strings.TrimSpace(args[1])
+			subject = strings.TrimSpace(args[2])
 			bodyBytes, err := io.ReadAll(os.Stdin)
 			if err != nil {
 				return err
@@ -60,7 +77,7 @@ var sendCmd = &cobra.Command{
 		}
 
 		if strings.TrimSpace(from) == "" {
-			from = defaultFrom
+			return fmt.Errorf("sender required (set MERCURY_FROM environment variable for a default)")
 		}
 		if strings.TrimSpace(to) == "" {
 			return fmt.Errorf("recipient required")
@@ -110,17 +127,4 @@ var sendCmd = &cobra.Command{
 
 func init() {
 	rootCmd.AddCommand(sendCmd)
-}
-
-func promptLine(reader *bufio.Reader, prompt string, fallback string) (string, error) {
-	warnStyle.Fprint(color.Output, prompt)
-	line, err := reader.ReadString('\n')
-	if err != nil && err != io.EOF {
-		return "", err
-	}
-	line = strings.TrimSpace(line)
-	if line == "" {
-		return fallback, nil
-	}
-	return line, nil
 }

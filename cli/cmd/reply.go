@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -33,11 +34,21 @@ var replyCmd = &cobra.Command{
 
 		printHeader("Reply")
 		printDim("To: %s", email.Sender)
-		printDim("Subject: Re: %s", email.Subject)
+		subject := normalizeReplySubject(email.Subject)
+		printDim("Subject: %s", subject)
 		fmt.Println("")
 
 		reader := bufio.NewReader(os.Stdin)
-		from, err := promptLine(reader, fmt.Sprintf("From [%s]: ", defaultFrom), defaultFrom)
+		defaultFrom := getDefaultFrom()
+		fromPrompt := "From: "
+		if defaultFrom != "" {
+			fromPrompt = fmt.Sprintf("From [%s]: ", defaultFrom)
+		}
+		from, err := promptLine(reader, fromPrompt, defaultFrom)
+		if errors.Is(err, ErrUserCancelled) {
+			fmt.Println("Cancelled.")
+			return nil
+		}
 		if err != nil {
 			return err
 		}
@@ -49,22 +60,22 @@ var replyCmd = &cobra.Command{
 		body := string(bodyBytes)
 
 		if strings.TrimSpace(from) == "" {
-			from = defaultFrom
+			return fmt.Errorf("sender required (set MERCURY_FROM environment variable for a default)")
 		}
 		if !validEmail(from) {
 			return fmt.Errorf("invalid sender email")
 		}
-		if !validEmail(email.Sender) {
-			return fmt.Errorf("invalid recipient email")
+		replyTo := extractEmailAddress(email.Sender)
+		if replyTo == "" {
+			return fmt.Errorf("cannot reply: invalid sender address %q", email.Sender)
 		}
 		if strings.TrimSpace(body) == "" {
 			return fmt.Errorf("body required")
 		}
 
-		subject := fmt.Sprintf("Re: %s", email.Subject)
 		req := &api.SendRequest{
 			From:    from,
-			To:      email.Sender,
+			To:      replyTo,
 			Subject: subject,
 			Text:    body,
 		}

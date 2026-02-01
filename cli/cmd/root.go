@@ -1,7 +1,10 @@
 package cmd
 
 import (
+	"bufio"
+	"errors"
 	"fmt"
+	"io"
 	"net/mail"
 	"os"
 	"strconv"
@@ -12,8 +15,6 @@ import (
 
 	"github.com/misty-step/mercury/cli/internal/api"
 )
-
-const defaultFrom = "kaylee@mistystep.io"
 
 var (
 	version = "dev"
@@ -33,6 +34,9 @@ var (
 	warnStyle    = color.New(color.FgYellow)
 )
 
+// ErrUserCancelled indicates the user pressed Ctrl+D to cancel.
+var ErrUserCancelled = errors.New("cancelled")
+
 func Execute() {
 	if err := rootCmd.Execute(); err != nil {
 		printError(err)
@@ -46,6 +50,13 @@ func init() {
 	rootCmd.SetVersionTemplate("mercury v{{.Version}}\n")
 	rootCmd.PersistentFlags().StringVar(&apiURL, "api-url", apiURL, "Server URL")
 	color.NoColor = !isTTY(os.Stdout)
+}
+
+func getDefaultFrom() string {
+	if from := strings.TrimSpace(os.Getenv("MERCURY_FROM")); from != "" {
+		return from
+	}
+	return ""
 }
 
 func authedClient() (*api.Client, error) {
@@ -110,6 +121,22 @@ func truncate(s string, max int) string {
 	return s[:max]
 }
 
+// normalizeReplySubject ensures subject has exactly one "Re: " prefix.
+func normalizeReplySubject(subject string) string {
+	cleaned := subject
+	for {
+		lower := strings.ToLower(cleaned)
+		if strings.HasPrefix(lower, "re:") {
+			cleaned = strings.TrimSpace(cleaned[3:])
+		} else if strings.HasPrefix(lower, "re ") {
+			cleaned = strings.TrimSpace(cleaned[3:])
+		} else {
+			break
+		}
+	}
+	return "Re: " + cleaned
+}
+
 func normalizeSender(sender string) string {
 	sender = strings.TrimSpace(sender)
 	if sender == "" {
@@ -124,6 +151,23 @@ func normalizeSender(sender string) string {
 	return sender
 }
 
+// extractEmailAddress extracts the email address from a potentially formatted sender.
+// e.g., "John Doe <john@example.com>" -> "john@example.com"
+func extractEmailAddress(sender string) string {
+	sender = strings.TrimSpace(sender)
+	if sender == "" {
+		return ""
+	}
+	addr, err := mail.ParseAddress(sender)
+	if err != nil {
+		if strings.Contains(sender, "@") {
+			return sender
+		}
+		return ""
+	}
+	return addr.Address
+}
+
 func validEmail(value string) bool {
 	value = strings.TrimSpace(value)
 	if value == "" {
@@ -131,4 +175,28 @@ func validEmail(value string) bool {
 	}
 	_, err := mail.ParseAddress(value)
 	return err == nil
+}
+
+func promptLine(reader *bufio.Reader, prompt string, fallback string) (string, error) {
+	warnStyle.Fprint(color.Output, prompt)
+	line, err := reader.ReadString('\n')
+	if err == io.EOF {
+		if line == "" {
+			fmt.Println()
+			return "", ErrUserCancelled
+		}
+		line = strings.TrimSpace(line)
+		if line == "" {
+			return fallback, nil
+		}
+		return line, nil
+	}
+	if err != nil {
+		return "", err
+	}
+	line = strings.TrimSpace(line)
+	if line == "" {
+		return fallback, nil
+	}
+	return line, nil
 }
