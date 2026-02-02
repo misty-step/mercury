@@ -40,6 +40,10 @@ func NewClient(baseURL string) (*Client, error) {
 	return newClient(baseURL, secret), nil
 }
 
+func NewClientWithSecret(baseURL, secret string) *Client {
+	return newClient(baseURL, secret)
+}
+
 func NewClientNoAuth(baseURL string) *Client {
 	return newClient(baseURL, "")
 }

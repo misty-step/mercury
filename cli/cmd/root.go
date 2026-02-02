@@ -14,11 +14,14 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/misty-step/mercury/cli/internal/api"
+	"github.com/misty-step/mercury/cli/internal/auth"
+	"github.com/misty-step/mercury/cli/internal/config"
 )
 
 var (
-	version = "dev"
-	apiURL  string
+	version     = "dev"
+	apiURL      string
+	profileName string
 
 	rootCmd = &cobra.Command{
 		Use:           "mercury",
@@ -49,6 +52,7 @@ func init() {
 	rootCmd.Version = version
 	rootCmd.SetVersionTemplate("mercury v{{.Version}}\n")
 	rootCmd.PersistentFlags().StringVar(&apiURL, "api-url", apiURL, "Server URL")
+	rootCmd.PersistentFlags().StringVarP(&profileName, "profile", "p", "", "Profile to use (from ~/.config/mercury/config.toml)")
 	color.NoColor = !isTTY(os.Stdout)
 }
 
@@ -60,7 +64,30 @@ func getDefaultFrom() string {
 }
 
 func authedClient() (*api.Client, error) {
-	return api.NewClient(apiURL)
+	var secret string
+	var err error
+
+	if profileName != "" {
+		cfg, err := config.Load()
+		if err != nil {
+			return nil, fmt.Errorf("load config: %w", err)
+		}
+		profile, err := cfg.GetProfile(profileName)
+		if err != nil {
+			return nil, err
+		}
+		secret, err = auth.GetSecretForProfile(profile)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		secret, err = auth.GetSecret()
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return api.NewClientWithSecret(apiURL, secret), nil
 }
 
 func unauthedClient() *api.Client {

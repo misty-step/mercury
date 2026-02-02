@@ -8,21 +8,79 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+
+	"github.com/misty-step/mercury/cli/internal/config"
 )
 
 // opTimeout is the maximum time to wait for 1Password CLI.
 const opTimeout = 10 * time.Second
 
-// GetSecret retrieves the Mercury API secret from environment or 1Password.
-// Priority: MERCURY_API_SECRET env var > 1Password CLI.
+// GetSecret retrieves the Mercury API secret, checking profile first.
 func GetSecret() (string, error) {
-	if s := strings.TrimSpace(os.Getenv("MERCURY_API_SECRET")); s != "" {
+	if s := envSecret(); s != "" {
 		return s, nil
 	}
 
-	secret, err := getSecretFrom1Password()
+	profileName := strings.TrimSpace(os.Getenv("MERCURY_PROFILE"))
+	if profileName != "" {
+		cfg, err := config.Load()
+		if err != nil {
+			return "", fmt.Errorf("load config: %w", err)
+		}
+		profile, err := cfg.GetProfile(profileName)
+		if err != nil {
+			return "", err
+		}
+		return GetSecretForProfile(profile)
+	}
+
+	cfg, err := config.Load()
+	if err == nil && cfg.Default != "" {
+		if profile, err := cfg.DefaultProfile(); err == nil {
+			if secret, err := GetSecretForProfile(profile); err == nil {
+				return secret, nil
+			}
+		}
+	}
+
+	return getSecretFrom1Password()
+}
+
+// GetSecretForProfile retrieves the API secret for a specific profile.
+func GetSecretForProfile(profile *config.Profile) (string, error) {
+	if profile.APIKey != "" {
+		return profile.APIKey, nil
+	}
+
+	if profile.OPItem != "" && profile.OPField != "" {
+		return getSecretFromProfile1Password(profile.OPItem, profile.OPField)
+	}
+
+	if s := envSecret(); s != "" {
+		return s, nil
+	}
+
+	return getSecretFrom1Password()
+}
+
+func envSecret() string {
+	return strings.TrimSpace(os.Getenv("MERCURY_API_SECRET"))
+}
+
+func getSecretFromProfile1Password(item, field string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), opTimeout)
+	defer cancel()
+
+	ref := fmt.Sprintf("op://Personal/%s/%s", item, field)
+	cmd := exec.CommandContext(ctx, "op", "read", ref)
+	out, err := cmd.Output()
 	if err != nil {
-		return "", err
+		return "", formatAuthError(err)
+	}
+
+	secret := strings.TrimSpace(string(out))
+	if secret == "" {
+		return "", fmt.Errorf("1Password returned empty secret for %s/%s", item, field)
 	}
 
 	return secret, nil
