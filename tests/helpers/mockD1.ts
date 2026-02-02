@@ -162,9 +162,12 @@ export class MockD1Database {
   }
 
   insertUserAlias(partial: Partial<UserAliasRecord>): UserAliasRecord {
+    if (partial.user_id === undefined || partial.user_id === null) {
+      throw new Error('user_id is required for insertUserAlias');
+    }
     const record: UserAliasRecord = {
       id: this.nextUserAliasId++,
-      user_id: partial.user_id ?? 0,
+      user_id: partial.user_id,
       address: partial.address ?? 'user@example.com',
       is_primary: partial.is_primary ?? 0,
       created_at: partial.created_at ?? this.now(),
@@ -236,7 +239,7 @@ export class MockD1Database {
       if (normalized.includes('SELECT ID')) {
         const [address, email] = params as [string, string];
         const user = this.users.find((record) => record.email === email);
-        if (!user) return;
+        if (!user) return 0;
         if (this.userAliases.some((alias) => alias.address === address)) {
           throw new Error('UNIQUE constraint failed: user_aliases.address');
         }
