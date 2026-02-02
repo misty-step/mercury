@@ -152,7 +152,7 @@ cat <<EOF
   cd cli && go build && ./mercury tui
 
 === TEST ADMIN IMPERSONATION ===
-  curl -H "Authorization: Bearer \\$API_SECRET" \\
+  curl -H "Authorization: Bearer secret" \\
     -H "X-Mercury-User: kaylee@mistystep.io" \\
     http://localhost:8787/emails
 EOF
