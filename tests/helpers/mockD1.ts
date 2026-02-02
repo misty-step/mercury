@@ -75,8 +75,9 @@ class MockD1PreparedStatement {
     return this;
   }
 
-  async run(): Promise<void> {
-    this.db.executeRun(this.sql, this.params);
+  async run(): Promise<{ meta: { changes: number } }> {
+    const changes = this.db.executeRun(this.sql, this.params);
+    return { meta: { changes } };
   }
 
   async all<T = Record<string, unknown>>(): Promise<PreparedResult<T>> {
@@ -191,7 +192,7 @@ export class MockD1Database {
     return record;
   }
 
-  executeRun(sql: string, params: unknown[]): void {
+  executeRun(sql: string, params: unknown[]): number {
     const normalized = normalizeSql(sql);
 
     if (normalized.includes('INSERT INTO EMAILS')) {
@@ -214,7 +215,7 @@ export class MockD1Database {
         user_id: userId === undefined || userId === null ? null : Number(userId),
         received_at: this.now(),
       });
-      return;
+      return 1;
     }
 
     if (normalized.startsWith('INSERT INTO USERS')) {
@@ -228,7 +229,7 @@ export class MockD1Database {
         role: role ?? 'user',
         created_at: this.now(),
       });
-      return;
+      return 1;
     }
 
     if (normalized.startsWith('INSERT INTO USER_ALIASES')) {
@@ -245,7 +246,7 @@ export class MockD1Database {
           is_primary: 1,
           created_at: this.now(),
         });
-        return;
+        return 1;
       }
 
       const [userId, address] = params as [number | string, string];
@@ -258,7 +259,7 @@ export class MockD1Database {
         is_primary: 1,
         created_at: this.now(),
       });
-      return;
+      return 1;
     }
 
     if (normalized.startsWith('INSERT INTO API_KEYS')) {
@@ -277,21 +278,29 @@ export class MockD1Database {
         name: name ?? null,
         created_at: this.now(),
       });
-      return;
+      return 1;
     }
 
     if (normalized.startsWith('UPDATE API_KEYS SET LAST_USED_AT = DATETIME')) {
       const [id] = params as [number | string];
       const record = this.apiKeys.find((item) => item.id === Number(id));
-      if (record) record.last_used_at = this.now();
-      return;
+      if (record) {
+        record.last_used_at = this.now();
+        return 1;
+      }
+      return 0;
     }
 
     if (normalized.startsWith('UPDATE API_KEYS SET REVOKED_AT = DATETIME')) {
       const [id] = params as [number | string];
-      const record = this.apiKeys.find((item) => item.id === Number(id));
-      if (record) record.revoked_at = this.now();
-      return;
+      const record = this.apiKeys.find(
+        (item) => item.id === Number(id) && item.revoked_at === null,
+      );
+      if (record) {
+        record.revoked_at = this.now();
+        return 1;
+      }
+      return 0;
     }
 
     if (
@@ -304,7 +313,7 @@ export class MockD1Database {
         record.deleted_at = this.now();
         record.folder = 'trash';
       }
-      return;
+      return 1;
     }
 
     if (normalized.startsWith('UPDATE EMAILS SET')) {
@@ -336,14 +345,14 @@ export class MockD1Database {
           continue;
         }
       }
-      return;
+      return 1;
     }
 
     if (normalized.startsWith('DELETE FROM EMAILS')) {
       const [id] = params as [string];
       const numericId = Number(id);
       this.emails = this.emails.filter((record) => record.id !== numericId);
-      return;
+      return 1;
     }
 
     throw new Error(`MockD1Database cannot execute run for SQL: ${sql}`);

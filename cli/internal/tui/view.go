@@ -48,6 +48,9 @@ func (m Model) View() string {
 
 	listWidth := m.width / 3
 	previewWidth := m.width - listWidth - 2
+	if previewWidth < 0 {
+		previewWidth = 0
+	}
 
 	listStyle := blurredPanelStyle
 	previewStyle := blurredPanelStyle

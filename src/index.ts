@@ -131,6 +131,7 @@ function isHttpResponse(value: unknown): value is Response {
 }
 
 async function listEmails(auth: AuthContext, env: Env, url: URL): Promise<Response> {
+  requireScope(auth, 'read');
   const limit = Math.min(parseInt(url.searchParams.get('limit') || '50'), 100);
   const offset = parseInt(url.searchParams.get('offset') || '0');
   const folder = url.searchParams.get('folder') || 'inbox';
@@ -192,6 +193,7 @@ async function listEmails(auth: AuthContext, env: Env, url: URL): Promise<Respon
 }
 
 async function getEmail(auth: AuthContext, env: Env, id: string): Promise<Response> {
+  requireScope(auth, 'read');
   const isAdmin = auth.user.role === 'admin';
   let query = 'SELECT * FROM emails WHERE id = ? AND deleted_at IS NULL';
   const params: (string | number)[] = [id];
@@ -218,7 +220,12 @@ async function updateEmail(
   requireScope(auth, 'write');
   await requireEmailOwnership(auth, env, id);
 
-  const body = (await request.json()) as Record<string, unknown>;
+  let body: Record<string, unknown>;
+  try {
+    body = (await request.json()) as Record<string, unknown>;
+  } catch {
+    return jsonResponse({ error: 'Invalid JSON body' }, 400);
+  }
 
   const updates: string[] = [];
   const params: (string | number)[] = [];
@@ -284,6 +291,7 @@ async function sendOutboundEmail(
   request: Request,
   defaultFrom: string,
 ): Promise<Response> {
+  requireScope(auth, 'send');
   let payload: unknown;
 
   try {

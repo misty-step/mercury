@@ -1,8 +1,8 @@
 -- 0003: Add proper ON DELETE actions to foreign keys
 -- D1/SQLite doesn't support ALTER TABLE for FK constraints, so recreate tables
 
--- Enable foreign key enforcement for this migration
-PRAGMA foreign_keys = OFF;
+-- Defer foreign key checks for this migration
+PRAGMA defer_foreign_keys = on;
 
 -- ============================================================
 -- user_aliases: ON DELETE CASCADE (delete aliases with user)
@@ -76,4 +76,4 @@ CREATE INDEX idx_emails_synced_at ON emails(synced_at);
 CREATE INDEX idx_emails_user_id ON emails(user_id);
 
 -- Re-enable foreign keys
-PRAGMA foreign_keys = ON;
+PRAGMA defer_foreign_keys = off;

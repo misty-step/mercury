@@ -56,6 +56,12 @@ export async function handleCreateApiKey(
   const name = typeof body.name === 'string' && body.name.trim().length > 0 ? body.name : null;
 
   if (ctx.user.role !== 'admin') {
+    if (ctx.user.id <= 0) {
+      return new Response(JSON.stringify({ error: 'API key must be associated with a user' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
     for (const scope of requestedScopes) {
       if (!ALLOWED_USER_SCOPES.has(scope)) {
         return new Response(JSON.stringify({ error: `Invalid scope: ${scope}` }), {

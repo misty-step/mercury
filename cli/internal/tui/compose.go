@@ -31,6 +31,11 @@ func getEditor() string {
 	return "vim"
 }
 
+// shellQuote safely quotes a string for shell execution
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
+}
+
 // cleanupCompose removes temp file and clears compose state
 func cleanupCompose(m *Model) {
 	if m.compose != nil && m.compose.TmpFile != "" {
@@ -81,7 +86,7 @@ func startCompose(m Model, to, subject string, headers map[string]string) (Model
 
 	editor := getEditor()
 
-	return m, tea.ExecProcess(exec.Command("sh", "-c", editor+" "+tmpFile.Name()), func(err error) tea.Msg {
+	return m, tea.ExecProcess(exec.Command("sh", "-c", editor+" "+shellQuote(tmpFile.Name())), func(err error) tea.Msg {
 		return EditorClosed{TmpFile: tmpFile.Name(), Err: err}
 	})
 }
@@ -153,7 +158,7 @@ func startReply(m Model, email *api.Email) (Model, tea.Cmd) {
 
 	editor := getEditor()
 
-	return m, tea.ExecProcess(exec.Command("sh", "-c", editor+" "+tmpFile.Name()), func(err error) tea.Msg {
+	return m, tea.ExecProcess(exec.Command("sh", "-c", editor+" "+shellQuote(tmpFile.Name())), func(err error) tea.Msg {
 		return EditorClosed{TmpFile: tmpFile.Name(), Err: err}
 	})
 }

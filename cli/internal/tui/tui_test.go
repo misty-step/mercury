@@ -114,13 +114,31 @@ func TestModel_Update_EmailsFetched(t *testing.T) {
 	m := NewModel(nil)
 	m.loading = true
 
+	// When emails are fetched with results, loading stays true while fetching first email detail
 	emails := testEmails()
 	msg := EmailsFetched{Emails: emails, Total: 2}
 	updated, _ := m.Update(msg)
 	model := updated.(Model)
 
-	if !model.loading {
-		t.Error("loading should be true after EmailsFetched with emails")
+	if model.err != nil {
+		t.Errorf("err should be nil, got %v", model.err)
+	}
+	if len(model.emails) != 2 {
+		t.Errorf("emails count = %d, want 2", len(model.emails))
+	}
+}
+
+func TestModel_Update_EmailsFetched_Empty(t *testing.T) {
+	m := NewModel(nil)
+	m.loading = true
+
+	// When no emails, loading should be false
+	msg := EmailsFetched{Emails: []api.Email{}, Total: 0}
+	updated, _ := m.Update(msg)
+	model := updated.(Model)
+
+	if model.loading {
+		t.Error("loading should be false after EmailsFetched with no emails")
 	}
 	if model.err != nil {
 		t.Errorf("err should be nil, got %v", model.err)
