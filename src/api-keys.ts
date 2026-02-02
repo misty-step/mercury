@@ -3,6 +3,7 @@ import type { AuthContext } from './auth';
 import type { Env } from './index';
 
 const ALLOWED_USER_SCOPES = new Set(['read', 'write', 'send']);
+const ALL_VALID_SCOPES = new Set(['read', 'write', 'send', 'admin']);
 const MAX_KEYS_PER_USER = 10;
 
 // Generate a secure API key with mk_ prefix
@@ -50,6 +51,16 @@ export async function handleCreateApiKey(
   }
   const scopes = requestedScopes.join(',');
   const name = typeof body.name === 'string' && body.name.trim().length > 0 ? body.name : null;
+
+  // Validate all scopes against whitelist (applies to all users including admin)
+  for (const scope of requestedScopes) {
+    if (!ALL_VALID_SCOPES.has(scope)) {
+      return new Response(JSON.stringify({ error: `Unknown scope: ${scope}` }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+  }
 
   if (ctx.user.role !== 'admin') {
     if (ctx.user.id <= 0) {

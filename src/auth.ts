@@ -114,10 +114,11 @@ export async function authenticate(
 
     if (!user) return null;
 
-    void db
-      .prepare("UPDATE api_keys SET last_used_at = datetime('now') WHERE id = ?")
+    // Update last_used_at for audit trail (don't block auth on this)
+    db.prepare("UPDATE api_keys SET last_used_at = datetime('now') WHERE id = ?")
       .bind(keyRow.id)
-      .run();
+      .run()
+      .catch((err) => console.error('Failed to update api_key last_used_at:', err));
 
     const contextUser = { id: user.id, email: user.email, role: user.role };
 

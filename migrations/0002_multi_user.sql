@@ -34,6 +34,17 @@ ALTER TABLE emails ADD COLUMN user_id INTEGER REFERENCES users(id);
 
 CREATE INDEX idx_emails_user_id ON emails(user_id);
 
+-- Backfill: assign existing emails to users based on recipient alias
+UPDATE emails SET user_id = (
+  SELECT ua.user_id FROM user_aliases ua
+  WHERE LOWER(ua.address) = LOWER(emails.recipient)
+) WHERE user_id IS NULL;
+
+-- Fallback: assign remaining orphaned emails to shared inbox
+UPDATE emails SET user_id = (
+  SELECT id FROM users WHERE email = 'shared@mistystep.io'
+) WHERE user_id IS NULL;
+
 INSERT INTO users (email, name, role) VALUES
   ('shared@mistystep.io', NULL, 'system'),
   ('phaedrus@mistystep.io', 'Phaedrus', 'admin'),

@@ -78,9 +78,9 @@ describe('api keys', () => {
         createExecutionContext(),
       );
 
-      expect(response.status).toBe(403);
+      expect(response.status).toBe(400);
       const body = await response.json();
-      expect(body).toEqual({ error: 'Invalid scope: unknown' });
+      expect(body).toEqual({ error: 'Unknown scope: unknown' });
     });
 
     it('should only allow scopes the user already has', async () => {
@@ -105,7 +105,27 @@ describe('api keys', () => {
       expect(body).toEqual({ error: 'Cannot grant scope: send' });
     });
 
-    it('should allow admin to grant any scope', async () => {
+    it('should allow admin to grant admin scope', async () => {
+      const response = await worker.fetch(
+        buildRequest('/api-keys', {
+          method: 'POST',
+          headers: {
+            Authorization: 'Bearer secret',
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ scopes: 'admin,read,write' }),
+        }),
+        env as never,
+        createExecutionContext(),
+      );
+
+      expect(response.status).toBe(201);
+      const body = await response.json();
+      expect(body.scopes).toBe('admin,read,write');
+      expect(db.apiKeys[0].scopes).toBe('admin,read,write');
+    });
+
+    it('should reject unknown scopes even for admin', async () => {
       const response = await worker.fetch(
         buildRequest('/api-keys', {
           method: 'POST',
@@ -119,10 +139,9 @@ describe('api keys', () => {
         createExecutionContext(),
       );
 
-      expect(response.status).toBe(201);
+      expect(response.status).toBe(400);
       const body = await response.json();
-      expect(body.scopes).toBe('admin,custom');
-      expect(db.apiKeys[0].scopes).toBe('admin,custom');
+      expect(body).toEqual({ error: 'Unknown scope: custom' });
     });
 
     it('should default to read,write,send for empty scopes', async () => {
