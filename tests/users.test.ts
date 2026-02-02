@@ -139,6 +139,33 @@ describe('users', () => {
       const created = db.users.find((user) => user.email === 'taken@example.com');
       expect(created).toBeUndefined();
     });
+
+    it('should normalize email to lowercase', async () => {
+      const response = await worker.fetch(
+        buildRequest('/users', {
+          method: 'POST',
+          headers: {
+            Authorization: 'Bearer secret',
+            'Content-Type': 'application/json',
+            'X-Mercury-User': adminUser.email,
+          },
+          body: JSON.stringify({
+            email: 'Test@EXAMPLE.com',
+            name: 'Casey',
+            role: 'user',
+          }),
+        }),
+        env as never,
+        createExecutionContext(),
+      );
+
+      expect(response.status).toBe(201);
+      const body = await response.json();
+      expect(body.user.email).toBe('test@example.com');
+
+      const created = db.users.find((user) => user.email === 'test@example.com');
+      expect(created).toBeTruthy();
+    });
   });
 
   it('should prevent non-admin from reading another user', async () => {

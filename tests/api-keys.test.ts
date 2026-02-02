@@ -147,6 +147,71 @@ describe('api keys', () => {
       expect(body.scopes).toBe('read,write,send');
       expect(db.apiKeys[0].scopes).toBe('read,write,send');
     });
+
+    it('should enforce max 10 active keys per user', async () => {
+      const token = 'mk_user_a_token';
+      await insertKeyForUser(userA.id, token);
+      for (let i = 0; i < 9; i += 1) {
+        await insertKeyForUser(userA.id, `mk_user_a_token_${i}`);
+      }
+
+      const response = await worker.fetch(
+        buildRequest('/api-keys', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ name: 'Overflow' }),
+        }),
+        env as never,
+        createExecutionContext(),
+      );
+
+      expect(response.status).toBe(429);
+      const body = await response.json();
+      expect(body).toEqual({
+        error: 'Maximum of 10 active API keys per user. Revoke unused keys first.',
+      });
+    });
+
+    it('should allow creating keys after revoking old ones', async () => {
+      const token = 'mk_user_a_token';
+      await insertKeyForUser(userA.id, token);
+      const keyIds: number[] = [];
+      for (let i = 0; i < 9; i += 1) {
+        const key = await insertKeyForUser(userA.id, `mk_user_a_token_${i}`);
+        keyIds.push(key.id);
+      }
+
+      const revokeResponse = await worker.fetch(
+        buildRequest(`/api-keys/${keyIds[0]}`, {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+        env as never,
+        createExecutionContext(),
+      );
+
+      expect(revokeResponse.status).toBe(200);
+
+      const response = await worker.fetch(
+        buildRequest('/api-keys', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ name: 'Replacement' }),
+        }),
+        env as never,
+        createExecutionContext(),
+      );
+
+      expect(response.status).toBe(201);
+      const body = await response.json();
+      expect(typeof body.key).toBe('string');
+    });
   });
 
   it('should return full api key once', async () => {

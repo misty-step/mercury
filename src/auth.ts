@@ -85,6 +85,10 @@ export async function authenticate(
     };
   }
 
+  // User API keys (mk_*) - authenticate via database
+  // SECURITY: User API keys intentionally do NOT support the X-Mercury-User
+  // impersonation header. This is a security boundary - only the admin API_SECRET
+  // can impersonate users. Do not add impersonation support here.
   if (token.startsWith('mk_')) {
     const hash = await hashApiKey(token);
     const keyRow = await db

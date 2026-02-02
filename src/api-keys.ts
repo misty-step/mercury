@@ -3,6 +3,7 @@ import type { AuthContext } from './auth';
 import type { Env } from './index';
 
 const ALLOWED_USER_SCOPES = new Set(['read', 'write', 'send']);
+const MAX_KEYS_PER_USER = 10;
 
 // Generate a secure API key with mk_ prefix
 export function generateApiKey(): { key: string; hash: string; prefix: string } {
@@ -57,6 +58,26 @@ export async function handleCreateApiKey(
         headers: { 'Content-Type': 'application/json' },
       });
     }
+
+    // Rate limit: max 10 active keys per user to prevent abuse
+    const activeKeyCount = await env.DB.prepare(
+      'SELECT COUNT(*) as count FROM api_keys WHERE user_id = ? AND revoked_at IS NULL',
+    )
+      .bind(ctx.user.id)
+      .first<{ count: number }>();
+
+    if (activeKeyCount && activeKeyCount.count >= MAX_KEYS_PER_USER) {
+      return new Response(
+        JSON.stringify({
+          error: `Maximum of ${MAX_KEYS_PER_USER} active API keys per user. Revoke unused keys first.`,
+        }),
+        {
+          status: 429,
+          headers: { 'Content-Type': 'application/json' },
+        },
+      );
+    }
+
     for (const scope of requestedScopes) {
       if (!ALLOWED_USER_SCOPES.has(scope)) {
         return new Response(JSON.stringify({ error: `Invalid scope: ${scope}` }), {

@@ -85,6 +85,7 @@ export async function handleCreateUser(
   const role = typeof payload.role === 'string' ? payload.role.trim() : 'user';
 
   if (email.length === 0) return badRequest('Missing "email"');
+  const normalizedEmail = email.toLowerCase();
   if (!EMAIL_REGEX.test(email)) return badRequest('Invalid email address format');
   if (!VALID_ROLES.has(role)) return badRequest('Invalid role');
 
@@ -96,7 +97,10 @@ export async function handleCreateUser(
   );
 
   try {
-    await env.DB.batch([userStmt.bind(email, name, role), aliasStmt.bind(email, email)]);
+    await env.DB.batch([
+      userStmt.bind(normalizedEmail, name, role),
+      aliasStmt.bind(normalizedEmail, normalizedEmail),
+    ]);
   } catch {
     return jsonResponse({ error: 'Failed to create user' }, 500);
   }
@@ -104,7 +108,7 @@ export async function handleCreateUser(
   const user = await env.DB.prepare(
     'SELECT id, email, name, role, created_at FROM users WHERE email = ? AND deleted_at IS NULL',
   )
-    .bind(email)
+    .bind(normalizedEmail)
     .first<UserRow>();
 
   if (!user) return jsonResponse({ error: 'Failed to create user' }, 500);

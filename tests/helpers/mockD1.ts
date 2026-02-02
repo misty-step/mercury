@@ -462,6 +462,15 @@ export class MockD1Database {
       })) as T[];
     }
 
+    if (normalized.startsWith('SELECT COUNT(*) AS COUNT FROM API_KEYS')) {
+      let results = this.apiKeys.filter((item) => item.revoked_at === null);
+      if (normalized.includes('USER_ID = ?')) {
+        const [userId] = params as [number | string];
+        results = results.filter((item) => item.user_id === Number(userId));
+      }
+      return [{ count: results.length }] as T[];
+    }
+
     if (normalized.startsWith('SELECT ID, MESSAGE_ID')) {
       const { filters, limit, offset } = parseEmailFilters(normalized, params, true);
       let results = applyEmailFilters(this.emails, filters);
