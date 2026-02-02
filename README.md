@@ -104,17 +104,20 @@ Access:
 
 ## API Reference
 
-All endpoints require `Authorization: Bearer <API_SECRET>` header.
+All endpoints require `Authorization: Bearer <API_SECRET>` (or `mk_` API key) header.
 
-| Method   | Endpoint      | Description                       |
-| -------- | ------------- | --------------------------------- |
-| `GET`    | `/health`     | Health check (no auth)            |
-| `GET`    | `/emails`     | List emails                       |
-| `GET`    | `/emails/:id` | Get email                         |
-| `PATCH`  | `/emails/:id` | Update email (read, star, folder) |
-| `DELETE` | `/emails/:id` | Delete email                      |
-| `POST`   | `/send`       | Send email                        |
-| `GET`    | `/stats`      | Mailbox statistics                |
+| Method   | Endpoint        | Description                       |
+| -------- | --------------- | --------------------------------- |
+| `GET`    | `/health`       | Health check (no auth)            |
+| `GET`    | `/emails`       | List emails                       |
+| `GET`    | `/emails/:id`   | Get email                         |
+| `PATCH`  | `/emails/:id`   | Update email (read, star, folder) |
+| `DELETE` | `/emails/:id`   | Delete email                      |
+| `POST`   | `/send`         | Send email                        |
+| `GET`    | `/stats`        | Mailbox statistics                |
+| `POST`   | `/api-keys`     | Create API key                    |
+| `GET`    | `/api-keys`     | List API keys                     |
+| `DELETE` | `/api-keys/:id` | Revoke API key                    |
 
 ### Query Parameters (GET /emails)
 
@@ -122,6 +125,10 @@ All endpoints require `Authorization: Bearer <API_SECRET>` header.
 - `offset` - Pagination offset
 - `folder` - Filter by folder (inbox, trash, archive)
 - `unread` - Filter unread only (true/false)
+- `recipient` - Admin-only filter by recipient email
+- `user_id` - Admin-only filter by owning user id
+
+Non-admin users always see only their own emails; `recipient` is ignored for non-admins.
 
 ### Send Email (POST /send)
 
