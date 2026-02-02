@@ -51,6 +51,17 @@ type PreparedResult<T> = {
   results: T[];
 };
 
+type MockD1Snapshot = {
+  emails: EmailRecord[];
+  users: UserRecord[];
+  userAliases: UserAliasRecord[];
+  apiKeys: ApiKeyRecord[];
+  nextId: number;
+  nextUserId: number;
+  nextUserAliasId: number;
+  nextApiKeyId: number;
+};
+
 class MockD1PreparedStatement {
   private params: unknown[] = [];
 
@@ -96,6 +107,21 @@ export class MockD1Database {
 
   prepare(sql: string): MockD1PreparedStatement {
     return new MockD1PreparedStatement(this, sql);
+  }
+
+  async batch(statements: MockD1PreparedStatement[]): Promise<{ success: boolean }[]> {
+    const snapshot = this.snapshot();
+    try {
+      const results: { success: boolean }[] = [];
+      for (const statement of statements) {
+        await statement.run();
+        results.push({ success: true });
+      }
+      return results;
+    } catch (error) {
+      this.restore(snapshot);
+      throw error;
+    }
   }
 
   insertEmail(partial: Partial<EmailRecord>): EmailRecord {
@@ -193,6 +219,9 @@ export class MockD1Database {
 
     if (normalized.startsWith('INSERT INTO USERS')) {
       const [email, name, role] = params as [string, string | null, string];
+      if (this.users.some((user) => user.email === email)) {
+        throw new Error('UNIQUE constraint failed: users.email');
+      }
       this.insertUser({
         email,
         name: name ?? null,
@@ -203,7 +232,26 @@ export class MockD1Database {
     }
 
     if (normalized.startsWith('INSERT INTO USER_ALIASES')) {
+      if (normalized.includes('SELECT ID')) {
+        const [address, email] = params as [string, string];
+        const user = this.users.find((record) => record.email === email);
+        if (!user) return;
+        if (this.userAliases.some((alias) => alias.address === address)) {
+          throw new Error('UNIQUE constraint failed: user_aliases.address');
+        }
+        this.insertUserAlias({
+          user_id: user.id,
+          address,
+          is_primary: 1,
+          created_at: this.now(),
+        });
+        return;
+      }
+
       const [userId, address] = params as [number | string, string];
+      if (this.userAliases.some((alias) => alias.address === address)) {
+        throw new Error('UNIQUE constraint failed: user_aliases.address');
+      }
       this.insertUserAlias({
         user_id: Number(userId),
         address,
@@ -435,7 +483,10 @@ export class MockD1Database {
     if (normalized.startsWith('SELECT * FROM EMAILS WHERE ID = ?')) {
       const [id] = params as [string];
       const record = this.findById(id);
-      if (!record || record.deleted_at !== null) return [];
+      if (!record) return [];
+      // Only filter by deleted_at if the query explicitly includes that condition
+      const checksDeleted = normalized.includes('DELETED_AT IS NULL');
+      if (checksDeleted && record.deleted_at !== null) return [];
       if (normalized.includes('USER_ID = ?')) {
         const userId = Number(params[1]);
         if (record.user_id !== userId) return [];
@@ -444,7 +495,11 @@ export class MockD1Database {
     }
 
     if (normalized.startsWith('SELECT COUNT(*) AS TOTAL')) {
-      const active = this.emails.filter((record) => record.deleted_at === null);
+      let active = this.emails.filter((record) => record.deleted_at === null);
+      if (normalized.includes('USER_ID = ?')) {
+        const [userId] = params as [number];
+        active = active.filter((record) => record.user_id === Number(userId));
+      }
       const stats = {
         total: active.length,
         unread: active.filter((record) => record.is_read === 0).length,
@@ -461,6 +516,30 @@ export class MockD1Database {
   private findById(id: string): EmailRecord | undefined {
     const numericId = Number(id);
     return this.emails.find((record) => record.id === numericId);
+  }
+
+  private snapshot(): MockD1Snapshot {
+    return {
+      emails: this.emails.map((record) => ({ ...record })),
+      users: this.users.map((record) => ({ ...record })),
+      userAliases: this.userAliases.map((record) => ({ ...record })),
+      apiKeys: this.apiKeys.map((record) => ({ ...record })),
+      nextId: this.nextId,
+      nextUserId: this.nextUserId,
+      nextUserAliasId: this.nextUserAliasId,
+      nextApiKeyId: this.nextApiKeyId,
+    };
+  }
+
+  private restore(snapshot: MockD1Snapshot): void {
+    this.emails = snapshot.emails.map((record) => ({ ...record }));
+    this.users = snapshot.users.map((record) => ({ ...record }));
+    this.userAliases = snapshot.userAliases.map((record) => ({ ...record }));
+    this.apiKeys = snapshot.apiKeys.map((record) => ({ ...record }));
+    this.nextId = snapshot.nextId;
+    this.nextUserId = snapshot.nextUserId;
+    this.nextUserAliasId = snapshot.nextUserAliasId;
+    this.nextApiKeyId = snapshot.nextApiKeyId;
   }
 
   private findUserById(id: number | string): UserRecord | undefined {

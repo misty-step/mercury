@@ -29,6 +29,26 @@ export async function hashApiKey(key: string): Promise<string> {
     .join('');
 }
 
+/**
+ * Constant-time string comparison to prevent timing attacks.
+ * Compares all bytes regardless of early mismatch.
+ */
+export function timingSafeCompare(a: string, b: string): boolean {
+  const encoder = new TextEncoder();
+  const aBytes = encoder.encode(a);
+  const bBytes = encoder.encode(b);
+  const maxLength = Math.max(aBytes.length, bBytes.length);
+
+  let result = aBytes.length ^ bBytes.length;
+  for (let i = 0; i < maxLength; i += 1) {
+    const aByte = aBytes[i] ?? 0;
+    const bByte = bBytes[i] ?? 0;
+    result |= aByte ^ bByte;
+  }
+
+  return result === 0;
+}
+
 export async function authenticate(
   request: Request,
   env: Env,
@@ -37,7 +57,7 @@ export async function authenticate(
   const token = extractBearerToken(request.headers.get('Authorization'));
   if (!token) return null;
 
-  if (token === env.API_SECRET) {
+  if (timingSafeCompare(token, env.API_SECRET)) {
     const impersonateEmail = request.headers.get('X-Mercury-User')?.trim();
     if (impersonateEmail) {
       const user = await db

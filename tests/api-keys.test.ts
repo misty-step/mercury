@@ -38,6 +38,117 @@ describe('api keys', () => {
     userB = db.insertUser({ email: 'user-b@example.com', role: 'user' });
   });
 
+  describe('handleCreateApiKey', () => {
+    it('should reject admin scope for non-admin user', async () => {
+      const token = 'mk_user_a_token';
+      await insertKeyForUser(userA.id, token, 'read,write,send');
+
+      const response = await worker.fetch(
+        buildRequest('/api-keys', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ scopes: 'admin' }),
+        }),
+        env as never,
+        createExecutionContext(),
+      );
+
+      expect(response.status).toBe(403);
+      const body = await response.json();
+      expect(body).toEqual({ error: 'Invalid scope: admin' });
+    });
+
+    it('should reject unknown scopes', async () => {
+      const token = 'mk_user_a_token';
+      await insertKeyForUser(userA.id, token, 'read,write,send');
+
+      const response = await worker.fetch(
+        buildRequest('/api-keys', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ scopes: 'read,write,unknown' }),
+        }),
+        env as never,
+        createExecutionContext(),
+      );
+
+      expect(response.status).toBe(403);
+      const body = await response.json();
+      expect(body).toEqual({ error: 'Invalid scope: unknown' });
+    });
+
+    it('should only allow scopes the user already has', async () => {
+      const token = 'mk_user_a_token';
+      await insertKeyForUser(userA.id, token, 'read,write');
+
+      const response = await worker.fetch(
+        buildRequest('/api-keys', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ scopes: 'read,write,send' }),
+        }),
+        env as never,
+        createExecutionContext(),
+      );
+
+      expect(response.status).toBe(403);
+      const body = await response.json();
+      expect(body).toEqual({ error: 'Cannot grant scope: send' });
+    });
+
+    it('should allow admin to grant any scope', async () => {
+      const response = await worker.fetch(
+        buildRequest('/api-keys', {
+          method: 'POST',
+          headers: {
+            Authorization: 'Bearer secret',
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ scopes: 'admin,custom' }),
+        }),
+        env as never,
+        createExecutionContext(),
+      );
+
+      expect(response.status).toBe(201);
+      const body = await response.json();
+      expect(body.scopes).toBe('admin,custom');
+      expect(db.apiKeys[0].scopes).toBe('admin,custom');
+    });
+
+    it('should default to read,write,send for empty scopes', async () => {
+      const token = 'mk_user_a_token';
+      await insertKeyForUser(userA.id, token, 'read,write,send');
+
+      const response = await worker.fetch(
+        buildRequest('/api-keys', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ scopes: '' }),
+        }),
+        env as never,
+        createExecutionContext(),
+      );
+
+      expect(response.status).toBe(201);
+      const body = await response.json();
+      expect(body.scopes).toBe('read,write,send');
+      expect(db.apiKeys[0].scopes).toBe('read,write,send');
+    });
+  });
+
   it('should return full api key once', async () => {
     const response = await worker.fetch(
       buildRequest('/api-keys', {

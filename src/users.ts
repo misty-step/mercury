@@ -90,9 +90,16 @@ export async function handleCreateUser(
 
   const name = nameValue.length > 0 ? nameValue : null;
 
-  await env.DB.prepare('INSERT INTO users (email, name, role) VALUES (?, ?, ?)')
-    .bind(email, name, role)
-    .run();
+  const userStmt = env.DB.prepare('INSERT INTO users (email, name, role) VALUES (?, ?, ?)');
+  const aliasStmt = env.DB.prepare(
+    'INSERT INTO user_aliases (user_id, address, is_primary) SELECT id, ?, 1 FROM users WHERE email = ?',
+  );
+
+  try {
+    await env.DB.batch([userStmt.bind(email, name, role), aliasStmt.bind(email, email)]);
+  } catch {
+    return jsonResponse({ error: 'Failed to create user' }, 500);
+  }
 
   const user = await env.DB.prepare(
     'SELECT id, email, name, role, created_at FROM users WHERE email = ? AND deleted_at IS NULL',
@@ -101,10 +108,6 @@ export async function handleCreateUser(
     .first<UserRow>();
 
   if (!user) return jsonResponse({ error: 'Failed to create user' }, 500);
-
-  await env.DB.prepare('INSERT INTO user_aliases (user_id, address, is_primary) VALUES (?, ?, 1)')
-    .bind(user.id, email)
-    .run();
 
   return jsonResponse({ user }, 201);
 }

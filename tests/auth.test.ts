@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { MockD1Database } from './helpers/mockD1';
 import { createMockD1Database } from './helpers/mockD1';
-import { authenticate, hashApiKey } from '../src/auth';
+import { authenticate, hashApiKey, timingSafeCompare } from '../src/auth';
 
 function buildRequest(path: string, init?: RequestInit): Request {
   return new Request(`https://example.com${path}`, init);
@@ -99,5 +99,23 @@ describe('auth', () => {
 
     expect(ctx?.user.email).toBe(user.email);
     expect(ctx?.isImpersonating).toBe(true);
+  });
+});
+
+describe('timingSafeCompare', () => {
+  it('should return true for equal strings', () => {
+    expect(timingSafeCompare('equal', 'equal')).toBe(true);
+  });
+
+  it('should return false for different strings', () => {
+    expect(timingSafeCompare('equal', 'nope')).toBe(false);
+  });
+
+  it('should return false for different length strings', () => {
+    expect(timingSafeCompare('short', 'longer')).toBe(false);
+  });
+
+  it('should handle empty strings', () => {
+    expect(timingSafeCompare('', '')).toBe(true);
   });
 });

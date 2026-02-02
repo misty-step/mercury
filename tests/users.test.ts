@@ -108,6 +108,39 @@ describe('users', () => {
     expect(alias?.is_primary).toBe(1);
   });
 
+  describe('handleCreateUser', () => {
+    it('should create user and alias atomically', async () => {
+      db.insertUserAlias({
+        user_id: adminUser.id,
+        address: 'taken@example.com',
+        is_primary: 1,
+      });
+
+      const response = await worker.fetch(
+        buildRequest('/users', {
+          method: 'POST',
+          headers: {
+            Authorization: 'Bearer secret',
+            'Content-Type': 'application/json',
+            'X-Mercury-User': adminUser.email,
+          },
+          body: JSON.stringify({
+            email: 'taken@example.com',
+            name: 'Taken User',
+            role: 'user',
+          }),
+        }),
+        env as never,
+        createExecutionContext(),
+      );
+
+      expect(response.status).toBe(500);
+
+      const created = db.users.find((user) => user.email === 'taken@example.com');
+      expect(created).toBeUndefined();
+    });
+  });
+
   it('should prevent non-admin from reading another user', async () => {
     const response = await worker.fetch(
       buildRequest(`/users/${adminUser.id}`, {

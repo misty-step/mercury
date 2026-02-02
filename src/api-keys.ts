@@ -7,6 +7,8 @@ interface Env {
   RESEND_API_KEY: string;
 }
 
+const ALLOWED_USER_SCOPES = new Set(['read', 'write', 'send']);
+
 // Generate a secure API key with mk_ prefix
 export function generateApiKey(): { key: string; hash: string; prefix: string } {
   const bytes = new Uint8Array(32);
@@ -39,11 +41,36 @@ export async function handleCreateApiKey(
   requireScope(ctx, 'write');
 
   const body = (await request.json()) as { name?: string; scopes?: string };
-  const scopes =
+  const scopesInput =
     typeof body.scopes === 'string' && body.scopes.trim().length > 0
       ? body.scopes
       : 'read,write,send';
+  const requestedScopes = scopesInput
+    .split(',')
+    .map((scope) => scope.trim())
+    .filter(Boolean);
+  if (requestedScopes.length === 0) {
+    requestedScopes.push('read', 'write', 'send');
+  }
+  const scopes = requestedScopes.join(',');
   const name = typeof body.name === 'string' && body.name.trim().length > 0 ? body.name : null;
+
+  if (ctx.user.role !== 'admin') {
+    for (const scope of requestedScopes) {
+      if (!ALLOWED_USER_SCOPES.has(scope)) {
+        return new Response(JSON.stringify({ error: `Invalid scope: ${scope}` }), {
+          status: 403,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      if (!ctx.scopes.has(scope)) {
+        return new Response(JSON.stringify({ error: `Cannot grant scope: ${scope}` }), {
+          status: 403,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+    }
+  }
 
   const { key, prefix } = generateApiKey();
   const hash = await hashKey(key);

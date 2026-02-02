@@ -308,6 +308,32 @@ describe('Multi-user Backend Integration', () => {
   });
 
   describe('Send Validation', () => {
+    it('should reject non-admin sending without owned from address', async () => {
+      const userA = insertUserWithAlias('sender@mistystep.io');
+      const { key } = await createApiKeyForUser(userA);
+
+      const response = await worker.fetch(
+        buildRequest('/send', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${key}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            to: 'recipient@example.com',
+            subject: 'Test',
+            text: 'Hello',
+          }),
+        }),
+        env as never,
+        createExecutionContext(),
+      );
+
+      expect(response.status).toBe(403);
+      const body = await response.json();
+      expect(body.error).toBe('From address not allowed');
+    });
+
     it('should reject sending from unowned alias', async () => {
       const userA = insertUserWithAlias('kaylee@mistystep.io');
       insertUserWithAlias('zoe@mistystep.io');

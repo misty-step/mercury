@@ -5,7 +5,8 @@
  * and exposes a REST API for retrieval.
  */
 
-import { requireAuth, type AuthContext } from './auth';
+import { requireAuth, requireScope, type AuthContext } from './auth';
+import { requireEmailOwnership } from './authorization';
 import { handleCreateApiKey, handleListApiKeys, handleRevokeApiKey } from './api-keys';
 import { sendEmail } from './send/resend';
 import { handleCreateUser, handleGetMe, handleGetUser, handleGetUsers } from './users';
@@ -118,6 +119,17 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
 
+/** Duck-type check for Response (instanceof fails across environments) */
+function isHttpResponse(value: unknown): value is Response {
+  return (
+    value !== null &&
+    typeof value === 'object' &&
+    'status' in value &&
+    'headers' in value &&
+    typeof (value as Response).status === 'number'
+  );
+}
+
 async function listEmails(auth: AuthContext, env: Env, url: URL): Promise<Response> {
   const limit = Math.min(parseInt(url.searchParams.get('limit') || '50'), 100);
   const offset = parseInt(url.searchParams.get('offset') || '0');
@@ -198,11 +210,14 @@ async function getEmail(auth: AuthContext, env: Env, id: string): Promise<Respon
 }
 
 async function updateEmail(
-  _auth: AuthContext,
+  auth: AuthContext,
   env: Env,
   request: Request,
   id: string,
 ): Promise<Response> {
+  requireScope(auth, 'write');
+  await requireEmailOwnership(auth, env, id);
+
   const body = (await request.json()) as Record<string, unknown>;
 
   const updates: string[] = [];
@@ -243,8 +258,12 @@ async function updateEmail(
   return jsonResponse({ success: true });
 }
 
-async function deleteEmail(_auth: AuthContext, env: Env, url: URL, id: string): Promise<Response> {
+async function deleteEmail(auth: AuthContext, env: Env, url: URL, id: string): Promise<Response> {
+  requireScope(auth, 'write');
   const permanent = url.searchParams.get('permanent') === 'true';
+
+  // For permanent delete, allow accessing soft-deleted emails
+  await requireEmailOwnership(auth, env, id, { includeDeleted: permanent });
 
   if (permanent) {
     await env.DB.prepare('DELETE FROM emails WHERE id = ?').bind(id).run();
@@ -301,7 +320,7 @@ async function sendOutboundEmail(
     return jsonResponse({ error: 'Missing "html" or "text"' }, 400);
   }
 
-  if (auth.user.role !== 'admin' && explicitFrom.length > 0) {
+  if (auth.user.role !== 'admin') {
     const aliasUserId = await resolveAliasUserId(env.DB, from);
     if (aliasUserId !== auth.user.id) {
       return jsonResponse({ error: 'From address not allowed' }, 403);
@@ -349,19 +368,29 @@ async function sendOutboundEmail(
   return jsonResponse({ error: sendResult.error || 'Failed to send email' }, 502);
 }
 
-async function getStats(_auth: AuthContext, env: Env): Promise<Response> {
-  const stats = await env.DB.prepare(
-    `
-      SELECT 
-        COUNT(*) as total,
-        SUM(CASE WHEN is_read = 0 THEN 1 ELSE 0 END) as unread,
-        SUM(CASE WHEN is_starred = 1 THEN 1 ELSE 0 END) as starred,
-        SUM(CASE WHEN folder = 'inbox' THEN 1 ELSE 0 END) as inbox,
-        SUM(CASE WHEN folder = 'trash' THEN 1 ELSE 0 END) as trash
-      FROM emails WHERE deleted_at IS NULL
-    `,
-  ).first();
+async function getStats(auth: AuthContext, env: Env): Promise<Response> {
+  requireScope(auth, 'read');
 
+  const isAdmin = auth.user.role === 'admin';
+  let query = `
+    SELECT 
+      COUNT(*) as total,
+      SUM(CASE WHEN is_read = 0 THEN 1 ELSE 0 END) as unread,
+      SUM(CASE WHEN is_starred = 1 THEN 1 ELSE 0 END) as starred,
+      SUM(CASE WHEN folder = 'inbox' THEN 1 ELSE 0 END) as inbox,
+      SUM(CASE WHEN folder = 'trash' THEN 1 ELSE 0 END) as trash
+    FROM emails WHERE deleted_at IS NULL
+  `;
+  const params: number[] = [];
+
+  if (!isAdmin) {
+    query += ' AND user_id = ?';
+    params.push(auth.user.id);
+  }
+
+  const stats = await env.DB.prepare(query)
+    .bind(...params)
+    .first();
   return jsonResponse({ stats });
 }
 
@@ -378,22 +407,22 @@ async function handleFetch(request: Request, env: Env): Promise<Response> {
   try {
     auth = await requireAuth(request, env, env.DB);
   } catch (error) {
-    if (error instanceof Response) return error;
+    if (isHttpResponse(error)) return error;
     throw error;
   }
 
   try {
     if (url.pathname === '/users' && request.method === 'GET') {
-      return handleGetUsers(env, auth);
+      return await handleGetUsers(env, auth);
     }
 
     if (url.pathname.match(/^\/users\/\d+$/) && request.method === 'GET') {
       const id = url.pathname.split('/')[2];
-      return handleGetUser(id, env, auth);
+      return await handleGetUser(id, env, auth);
     }
 
     if (url.pathname === '/users' && request.method === 'POST') {
-      return handleCreateUser(request, env, auth);
+      return await handleCreateUser(request, env, auth);
     }
 
     if (url.pathname === '/me' && request.method === 'GET') {
@@ -401,48 +430,48 @@ async function handleFetch(request: Request, env: Env): Promise<Response> {
     }
 
     if (url.pathname === '/api-keys' && request.method === 'POST') {
-      return handleCreateApiKey(request, env, auth);
+      return await handleCreateApiKey(request, env, auth);
     }
 
     if (url.pathname === '/api-keys' && request.method === 'GET') {
-      return handleListApiKeys(env, auth);
+      return await handleListApiKeys(env, auth);
     }
 
     if (url.pathname.match(/^\/api-keys\/\d+$/) && request.method === 'DELETE') {
       const id = url.pathname.split('/')[2];
-      return handleRevokeApiKey(id, env, auth);
+      return await handleRevokeApiKey(id, env, auth);
     }
 
     if (url.pathname === '/emails' && request.method === 'GET') {
-      return listEmails(auth, env, url);
+      return await listEmails(auth, env, url);
     }
 
     if (url.pathname.match(/^\/emails\/\d+$/) && request.method === 'GET') {
       const id = url.pathname.split('/')[2];
-      return getEmail(auth, env, id);
+      return await getEmail(auth, env, id);
     }
 
     if (url.pathname.match(/^\/emails\/\d+$/) && request.method === 'PATCH') {
       const id = url.pathname.split('/')[2];
-      return updateEmail(auth, env, request, id);
+      return await updateEmail(auth, env, request, id);
     }
 
     if (url.pathname.match(/^\/emails\/\d+$/) && request.method === 'DELETE') {
       const id = url.pathname.split('/')[2];
-      return deleteEmail(auth, env, url, id);
+      return await deleteEmail(auth, env, url, id);
     }
 
     if (url.pathname === '/send' && request.method === 'POST') {
-      return sendOutboundEmail(auth, env, request, defaultFrom);
+      return await sendOutboundEmail(auth, env, request, defaultFrom);
     }
 
     if (url.pathname === '/stats' && request.method === 'GET') {
-      return getStats(auth, env);
+      return await getStats(auth, env);
     }
 
     return notFound();
   } catch (error) {
-    if (error instanceof Response) return error;
+    if (isHttpResponse(error)) return error;
     throw error;
   }
 }
