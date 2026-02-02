@@ -5,6 +5,7 @@
   "main": "src/index.ts",
   "scripts": {
     "dev": "wrangler dev",
+    "dev:setup": "./scripts/dev-setup.sh",
     "deploy": "wrangler deploy",
     "db:init": "wrangler d1 execute mailbox --file=schema.sql",
     "db:init:local": "wrangler d1 execute mailbox --local --file=schema.sql",
