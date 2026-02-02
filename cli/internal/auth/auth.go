@@ -36,11 +36,15 @@ func GetSecret() (string, error) {
 
 	cfg, err := config.Load()
 	if err == nil && cfg.Default != "" {
-		if profile, err := cfg.DefaultProfile(); err == nil {
-			if secret, err := GetSecretForProfile(profile); err == nil {
-				return secret, nil
-			}
+		profile, err := cfg.DefaultProfile()
+		if err != nil {
+			return "", fmt.Errorf("failed to get default profile %q: %w", cfg.Default, err)
 		}
+		secret, err := GetSecretForProfile(profile)
+		if err != nil {
+			return "", fmt.Errorf("failed to get secret for default profile %q: %w", cfg.Default, err)
+		}
+		return secret, nil
 	}
 
 	return getSecretFrom1Password()

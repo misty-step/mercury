@@ -40,7 +40,15 @@ export async function handleCreateApiKey(
 ): Promise<Response> {
   requireScope(ctx, 'write');
 
-  const body = (await request.json()) as { name?: string; scopes?: string };
+  let body: { name?: string; scopes?: string };
+  try {
+    body = (await request.json()) as { name?: string; scopes?: string };
+  } catch {
+    return new Response(JSON.stringify({ error: 'Invalid JSON body' }), {
+      status: 400,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
   const scopesInput =
     typeof body.scopes === 'string' && body.scopes.trim().length > 0
       ? body.scopes
@@ -147,9 +155,15 @@ export async function handleRevokeApiKey(
     }
   }
 
-  await env.DB.prepare("UPDATE api_keys SET revoked_at = datetime('now') WHERE id = ?")
+  const result = await env.DB.prepare(
+    "UPDATE api_keys SET revoked_at = datetime('now') WHERE id = ? AND revoked_at IS NULL",
+  )
     .bind(id)
     .run();
+
+  if (result.meta.changes === 0) {
+    return new Response('Not found', { status: 404 });
+  }
 
   return new Response(JSON.stringify({ success: true }), {
     headers: { 'Content-Type': 'application/json' },

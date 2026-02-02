@@ -31,6 +31,17 @@ func getEditor() string {
 	return "vim"
 }
 
+// buildEditorCommand creates an exec.Command for the editor with the given file
+// Handles editors with arguments like "code --wait" by parsing the editor string
+func buildEditorCommand(editor, filePath string) *exec.Cmd {
+	parts := strings.Fields(editor)
+	if len(parts) == 0 {
+		parts = []string{"vim"}
+	}
+	args := append(parts[1:], filePath)
+	return exec.Command(parts[0], args...)
+}
+
 // shellQuote safely quotes a string for shell execution
 func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
@@ -48,7 +59,13 @@ func cleanupCompose(m *Model) {
 func startCompose(m Model, to, subject string, headers map[string]string) (Model, tea.Cmd) {
 	// Block new compose while one is active
 	if m.compose != nil {
-		return m, nil
+		if m.compose.TmpFile == "" {
+			return m, nil
+		}
+		editor := getEditor()
+		return m, tea.ExecProcess(buildEditorCommand(editor, m.compose.TmpFile), func(err error) tea.Msg {
+			return EditorClosed{TmpFile: m.compose.TmpFile, Err: err}
+		})
 	}
 
 	// Create temp file with template
@@ -75,7 +92,11 @@ func startCompose(m Model, to, subject string, headers map[string]string) (Model
 		os.Remove(tmpFile.Name())
 		return m, nil
 	}
-	tmpFile.Close()
+	if err := tmpFile.Close(); err != nil {
+		m.err = err
+		_ = os.Remove(tmpFile.Name())
+		return m, nil
+	}
 
 	m.compose = &ComposeState{
 		To:      to,
@@ -86,7 +107,7 @@ func startCompose(m Model, to, subject string, headers map[string]string) (Model
 
 	editor := getEditor()
 
-	return m, tea.ExecProcess(exec.Command("sh", "-c", editor+" "+shellQuote(tmpFile.Name())), func(err error) tea.Msg {
+	return m, tea.ExecProcess(buildEditorCommand(editor, tmpFile.Name()), func(err error) tea.Msg {
 		return EditorClosed{TmpFile: tmpFile.Name(), Err: err}
 	})
 }
@@ -158,7 +179,7 @@ func startReply(m Model, email *api.Email) (Model, tea.Cmd) {
 
 	editor := getEditor()
 
-	return m, tea.ExecProcess(exec.Command("sh", "-c", editor+" "+shellQuote(tmpFile.Name())), func(err error) tea.Msg {
+	return m, tea.ExecProcess(buildEditorCommand(editor, tmpFile.Name()), func(err error) tea.Msg {
 		return EditorClosed{TmpFile: tmpFile.Name(), Err: err}
 	})
 }
@@ -169,10 +190,9 @@ func handleEditorClose(m Model, tmpFile string, editorErr error) (Model, tea.Cmd
 		return m, nil
 	}
 
-	defer os.Remove(tmpFile)
-
 	if editorErr != nil {
 		m.err = editorErr
+		_ = os.Remove(tmpFile)
 		m.compose = nil
 		return m, nil
 	}
@@ -180,6 +200,7 @@ func handleEditorClose(m Model, tmpFile string, editorErr error) (Model, tea.Cmd
 	content, err := os.ReadFile(tmpFile)
 	if err != nil {
 		m.err = err
+		_ = os.Remove(tmpFile)
 		m.compose = nil
 		return m, nil
 	}
@@ -221,24 +242,24 @@ func handleEditorClose(m Model, tmpFile string, editorErr error) (Model, tea.Cmd
 
 	// If body is empty, cancel
 	if body == "" {
+		_ = os.Remove(tmpFile)
 		m.compose = nil
 		return m, nil
 	}
 
 	// Validate To field
 	if to == "" || !strings.Contains(to, "@") {
-		m.err = fmt.Errorf("invalid recipient: To must be non-empty and contain @")
-		m.compose = nil
+		m.err = fmt.Errorf("invalid recipient: To must be non-empty and contain @. Press 'c' to edit draft")
 		return m, nil
 	}
 
 	// Validate Subject field
 	if subject == "" {
-		m.err = fmt.Errorf("invalid email: Subject must be non-empty")
-		m.compose = nil
+		m.err = fmt.Errorf("invalid email: Subject must be non-empty. Press 'c' to edit draft")
 		return m, nil
 	}
 
+	_ = os.Remove(tmpFile)
 	m.compose = nil
 
 	// Send the email
