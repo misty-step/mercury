@@ -63,8 +63,9 @@ func startCompose(m Model, to, subject string, headers map[string]string) (Model
 			return m, nil
 		}
 		editor := getEditor()
-		return m, tea.ExecProcess(buildEditorCommand(editor, m.compose.TmpFile), func(err error) tea.Msg {
-			return EditorClosed{TmpFile: m.compose.TmpFile, Err: err}
+		tmpPath := m.compose.TmpFile
+		return m, tea.ExecProcess(buildEditorCommand(editor, tmpPath), func(err error) tea.Msg {
+			return EditorClosed{TmpFile: tmpPath, Err: err}
 		})
 	}
 

@@ -132,8 +132,10 @@ function isHttpResponse(value: unknown): value is Response {
 
 async function listEmails(auth: AuthContext, env: Env, url: URL): Promise<Response> {
   requireScope(auth, 'read');
-  const limit = Math.min(parseInt(url.searchParams.get('limit') || '50'), 100);
-  const offset = parseInt(url.searchParams.get('offset') || '0');
+  const limitParam = parseInt(url.searchParams.get('limit') || '50', 10);
+  const offsetParam = parseInt(url.searchParams.get('offset') || '0', 10);
+  const limit = Number.isFinite(limitParam) ? Math.min(limitParam, 100) : 50;
+  const offset = Number.isFinite(offsetParam) ? offsetParam : 0;
   const folder = url.searchParams.get('folder') || 'inbox';
   const unreadOnly = url.searchParams.get('unread') === 'true';
   const since = url.searchParams.get('since'); // ISO timestamp

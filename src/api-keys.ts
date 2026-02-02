@@ -1,11 +1,6 @@
-import { requireScope } from './auth';
+import { requireScope, hashApiKey } from './auth';
 import type { AuthContext } from './auth';
-
-interface Env {
-  DB: D1Database;
-  API_SECRET: string;
-  RESEND_API_KEY: string;
-}
+import type { Env } from './index';
 
 const ALLOWED_USER_SCOPES = new Set(['read', 'write', 'send']);
 
@@ -22,14 +17,6 @@ export function generateApiKey(): { key: string; hash: string; prefix: string } 
   const prefix = key.slice(0, 11); // 'mk_' + 8 chars
   // Hash will be computed in handler
   return { key, hash: '', prefix };
-}
-
-async function hashKey(key: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(key);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map((byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
 // POST /api-keys - Generate new key for current user
@@ -87,7 +74,7 @@ export async function handleCreateApiKey(
   }
 
   const { key, prefix } = generateApiKey();
-  const hash = await hashKey(key);
+  const hash = await hashApiKey(key);
 
   await env.DB.prepare(
     `INSERT INTO api_keys (user_id, prefix, key_hash, scopes, name, created_at)
