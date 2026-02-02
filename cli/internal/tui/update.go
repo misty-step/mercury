@@ -15,6 +15,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		switch {
 		case key.Matches(msg, keys.Quit):
+			cleanupCompose(&m)
 			return m, tea.Quit
 		case key.Matches(msg, keys.Tab):
 			if m.focus == focusList {
