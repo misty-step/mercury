@@ -1,0 +1,6 @@
+default = "test"
+
+[profiles.test]
+email = "test@example.com"
+op_item = "Test Item"
+op_field = "TEST_KEY"

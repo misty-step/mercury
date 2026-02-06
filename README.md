@@ -64,16 +64,20 @@ sudo cp mercury /usr/local/bin/
 cd ..
 
 # Configure (choose one):
-# Option 1: Environment variable
+# Option 1: Environment variable (admin only)
 export MERCURY_API_SECRET="your-secret"
 
-# Option 2: 1Password (automatic)
+# Option 2: 1Password (automatic, admin only)
 # Store secret at: op://Personal/Mercury Mail API/API_SECRET
+
+# Option 3: Profiles (regular users)
+# Use mk_* API keys and config.toml profiles (see Multi-User Setup)
 
 # Use it!
 mercury inbox
 mercury read 1
 mercury send
+mercury --profile phaedrus inbox
 ```
 
 ## CLI Usage
@@ -104,17 +108,20 @@ Access:
 
 ## API Reference
 
-All endpoints require `Authorization: Bearer <API_SECRET>` header.
+All endpoints require `Authorization: Bearer <API_SECRET>` (or `mk_` API key) header.
 
-| Method   | Endpoint      | Description                       |
-| -------- | ------------- | --------------------------------- |
-| `GET`    | `/health`     | Health check (no auth)            |
-| `GET`    | `/emails`     | List emails                       |
-| `GET`    | `/emails/:id` | Get email                         |
-| `PATCH`  | `/emails/:id` | Update email (read, star, folder) |
-| `DELETE` | `/emails/:id` | Delete email                      |
-| `POST`   | `/send`       | Send email                        |
-| `GET`    | `/stats`      | Mailbox statistics                |
+| Method   | Endpoint        | Description                       |
+| -------- | --------------- | --------------------------------- |
+| `GET`    | `/health`       | Health check (no auth)            |
+| `GET`    | `/emails`       | List emails                       |
+| `GET`    | `/emails/:id`   | Get email                         |
+| `PATCH`  | `/emails/:id`   | Update email (read, star, folder) |
+| `DELETE` | `/emails/:id`   | Delete email                      |
+| `POST`   | `/send`         | Send email                        |
+| `GET`    | `/stats`        | Mailbox statistics                |
+| `POST`   | `/api-keys`     | Create API key                    |
+| `GET`    | `/api-keys`     | List API keys                     |
+| `DELETE` | `/api-keys/:id` | Revoke API key                    |
 
 ### Query Parameters (GET /emails)
 
@@ -122,6 +129,10 @@ All endpoints require `Authorization: Bearer <API_SECRET>` header.
 - `offset` - Pagination offset
 - `folder` - Filter by folder (inbox, trash, archive)
 - `unread` - Filter unread only (true/false)
+- `recipient` - Admin-only filter by recipient email
+- `user_id` - Admin-only filter by owning user id
+
+Non-admin users always see only their own emails; `recipient` is ignored for non-admins.
 
 ### Send Email (POST /send)
 
@@ -141,6 +152,64 @@ All endpoints require `Authorization: Bearer <API_SECRET>` header.
 2. Enable Email Routing
 3. Add DNS records (MX, SPF, DKIM as instructed)
 4. Create catch-all rule → Route to Worker → `cloudflare-mailbox`
+
+## Multi-User Setup
+
+### Authentication Model
+
+Two types of keys:
+
+- `API_SECRET` — admin bootstrap key, set via `wrangler secret`
+- User API keys — `mk_*` prefix, per-user, stored in the DB
+
+### After Deployment: Create User API Keys
+
+Use `API_SECRET` with `X-Mercury-User` to mint per-user keys:
+
+```bash
+# Create API key for phaedrus (admin user)
+curl -X POST https://your-domain.com/api-keys \
+  -H 'Authorization: Bearer $API_SECRET' \
+  -H 'X-Mercury-User: phaedrus@mistystep.io' \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"cli","scopes":"read,write,send"}'
+
+# Response contains key (shown only once):
+# {"key":"mk_abc...","prefix":"mk_abc","scopes":"read,write,send"}
+
+# Repeat for other users
+curl -X POST https://your-domain.com/api-keys \
+  -H 'Authorization: Bearer $API_SECRET' \
+  -H 'X-Mercury-User: kaylee@mistystep.io' \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"cli","scopes":"read,write,send"}'
+```
+
+### CLI Profile Configuration
+
+Store keys in profiles:
+
+```bash
+# Create profile config at ~/.config/mercury/config.toml
+mkdir -p ~/.config/mercury
+cat > ~/.config/mercury/config.toml << 'EOF'
+[profiles.phaedrus]
+api_url = "https://mail.mistystep.io"
+# API key stored in 1Password: op://Personal/Mercury phaedrus/credential
+
+[profiles.kaylee]
+api_url = "https://mail.mistystep.io"
+# API key stored in 1Password: op://Personal/Mercury kaylee/credential
+EOF
+
+# Use profile
+mercury --profile phaedrus inbox
+mercury --profile kaylee inbox
+```
+
+### User Isolation
+
+Each user only sees their own emails. Admin can impersonate via `X-Mercury-User`.
 
 ## Cost
 

@@ -5,6 +5,7 @@
   "main": "src/index.ts",
   "scripts": {
     "dev": "wrangler dev",
+    "dev:setup": "./scripts/dev-setup.sh",
     "deploy": "wrangler deploy",
     "db:init": "wrangler d1 execute mailbox --file=schema.sql",
     "db:init:local": "wrangler d1 execute mailbox --local --file=schema.sql",
@@ -15,7 +16,13 @@
     "test:coverage": "vitest run --coverage",
     "prepare": "husky install"
   },
-  "keywords": ["cloudflare", "email", "workers", "d1", "self-hosted"],
+  "keywords": [
+    "cloudflare",
+    "email",
+    "workers",
+    "d1",
+    "self-hosted"
+  ],
   "author": "Misty Step",
   "license": "MIT",
   "devDependencies": {
@@ -41,5 +48,6 @@
     "**/*.{json,md,yml,yaml,css,scss}": [
       "prettier --write"
     ]
-  }
+  },
+  "packageManager": "pnpm@10.22.0+sha512.bf049efe995b28f527fd2b41ae0474ce29186f7edcb3bf545087bd61fbbebb2bf75362d1307fda09c2d288e1e499787ac12d4fcb617a974718a6051f2eee741c"
 }

@@ -6,3 +6,5 @@ dist/
 .DS_Store
 # Go CLI binary (source is tracked, binary is built)
 cli/mercury
+cli/cli
+coverage/

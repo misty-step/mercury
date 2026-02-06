@@ -1,36 +1,50 @@
 package auth
 
 import (
-	"os"
 	"os/exec"
 	"strings"
 	"testing"
+
+	"github.com/misty-step/mercury/cli/internal/config"
 )
 
-func TestGetSecretFromEnv(t *testing.T) {
-	original := os.Getenv("MERCURY_API_SECRET")
-	defer os.Setenv("MERCURY_API_SECRET", original)
+func TestGetSecretForProfile_DirectKey(t *testing.T) {
+	profile := &config.Profile{
+		Email:  "test@example.com",
+		APIKey: "test-api-key",
+	}
 
-	os.Setenv("MERCURY_API_SECRET", "test-secret-123")
+	secret, err := GetSecretForProfile(profile)
+	if err != nil {
+		t.Fatalf("GetSecretForProfile() error = %v", err)
+	}
+	if secret != "test-api-key" {
+		t.Errorf("secret = %q, want %q", secret, "test-api-key")
+	}
+}
+
+func TestGetSecret_WithEnvVar(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("MERCURY_PROFILE", "")
+	t.Setenv("MERCURY_API_SECRET", "env-secret")
 
 	secret, err := GetSecret()
 	if err != nil {
-		t.Errorf("unexpected error: %v", err)
+		t.Fatalf("GetSecret() error = %v", err)
 	}
-	if secret != "test-secret-123" {
-		t.Errorf("expected 'test-secret-123', got %q", secret)
+	if secret != "env-secret" {
+		t.Errorf("secret = %q, want %q", secret, "env-secret")
 	}
 }
 
 func TestGetSecretFromEnvWithWhitespace(t *testing.T) {
-	original := os.Getenv("MERCURY_API_SECRET")
-	defer os.Setenv("MERCURY_API_SECRET", original)
-
-	os.Setenv("MERCURY_API_SECRET", "  secret-with-spaces  ")
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("MERCURY_PROFILE", "")
+	t.Setenv("MERCURY_API_SECRET", "  secret-with-spaces  ")
 
 	secret, err := GetSecret()
 	if err != nil {
-		t.Errorf("unexpected error: %v", err)
+		t.Fatalf("unexpected error: %v", err)
 	}
 	if secret != "secret-with-spaces" {
 		t.Errorf("expected trimmed secret, got %q", secret)
@@ -38,10 +52,9 @@ func TestGetSecretFromEnvWithWhitespace(t *testing.T) {
 }
 
 func TestGetSecretEmptyEnvFallsBackTo1Password(t *testing.T) {
-	original := os.Getenv("MERCURY_API_SECRET")
-	defer os.Setenv("MERCURY_API_SECRET", original)
-
-	os.Setenv("MERCURY_API_SECRET", "")
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("MERCURY_PROFILE", "")
+	t.Setenv("MERCURY_API_SECRET", "")
 
 	_, err := GetSecret()
 	if err == nil {
