@@ -5,6 +5,7 @@
  * and exposes a REST API for retrieval.
  */
 
+import * as Sentry from '@sentry/cloudflare';
 import { requireAuth, requireScope, type AuthContext } from './auth';
 import { requireEmailOwnership } from './authorization';
 import { handleCreateApiKey, handleListApiKeys, handleRevokeApiKey } from './api-keys';
@@ -15,6 +16,7 @@ export interface Env {
   DB: D1Database;
   API_SECRET: string;
   RESEND_API_KEY: string;
+  SENTRY_DSN: string;
 }
 
 interface EmailMessage {
@@ -488,12 +490,18 @@ async function handleFetch(request: Request, env: Env): Promise<Response> {
 
 // ============== Export ==============
 
-export default {
-  async email(message: EmailMessage, env: Env, _ctx: ExecutionContext): Promise<void> {
-    await handleEmail(message, env);
-  },
+export default Sentry.withSentry(
+  (env: Env) => ({
+    dsn: env.SENTRY_DSN,
+    tracesSampleRate: 0.1,
+  }),
+  {
+    async email(message: EmailMessage, env: Env, _ctx: ExecutionContext): Promise<void> {
+      await handleEmail(message, env);
+    },
 
-  async fetch(request: Request, env: Env, _ctx: ExecutionContext): Promise<Response> {
-    return handleFetch(request, env);
+    async fetch(request: Request, env: Env, _ctx: ExecutionContext): Promise<Response> {
+      return handleFetch(request, env);
+    },
   },
-};
+);

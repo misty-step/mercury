@@ -22,4 +22,6 @@ database_id = "f2f805b4-1dd7-4ec8-b75a-35147e5744e6"
 # [vars]
 # API_SECRET = "set-via-wrangler-secret"
 
+# Sentry DSN - set with: wrangler secret put SENTRY_DSN
+
 # Email routing configured in Cloudflare dashboard
