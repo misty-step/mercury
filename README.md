@@ -194,11 +194,9 @@ Store keys in profiles:
 mkdir -p ~/.config/mercury
 cat > ~/.config/mercury/config.toml << 'EOF'
 [profiles.phaedrus]
-api_url = "https://mail.mistystep.io"
 # API key stored in 1Password: op://Personal/Mercury phaedrus/credential
 
 [profiles.kaylee]
-api_url = "https://mail.mistystep.io"
 # API key stored in 1Password: op://Personal/Mercury kaylee/credential
 EOF
 
